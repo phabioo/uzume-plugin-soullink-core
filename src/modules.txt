@@ -16,3 +16,4 @@ gen6.darc
 gen6.maps
 gen6.garc_entry
 gen6.pal_bclim
+gen6.icon_order

@@ -348,6 +348,7 @@ function M.attach(ctx)
     }
   end
 
+  function obj:icon_rev() return icon_store.icon_rev() end
   function obj:icon(species, form) return icon_store.icon(species, form) end
   function obj:icon_variants(species, form) return icon_store.icon_variants(species, form) end
   function obj:map_candidates() return map_store.candidates() end

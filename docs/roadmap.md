@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: in progress: skeleton and ORAS adapter; v0.4.1 (v0.4.0 plus the one-time icon debug export); v0.4.0 (new plugin id `uzume.soullink-core`; v0.3.5 = v0.3.4 plus the display name "SoulLink Core"; v0.3.4 = v0.3.3 plus the time-budgeted map scan and the Lua icon decoder; v0.3.3 = v0.3.2 plus the Spanish language byte, LZ11 GARC entries, icon/text/personal diagnostics; v0.3.2 = v0.3.1 plus places that never stay empty: text fallback for `locations()`, names before lists, retried scans, `diagnostics()`; v0.3.1: fixes for zones and species names, and `locations()`) delivers live team stats, trainer/badges/money, location with names, encounter areas, battle state, wild encounters and names from the game text for Omega Ruby / Alpha Sapphire (v1.0 and v1.4); real-game verification of the derived and battle addresses is open (`docs/games/omega-ruby-alpha-sapphire.md`). Depends on Uzume plugin API v1 (since 0.11); see https://github.com/phabioo/uzume `docs/roadmap.md`.
+Status: in progress: skeleton and ORAS adapter; v0.4.2 (v0.4.1 plus correct ORAS box icons); v0.4.1 (v0.4.0 plus the one-time icon debug export); v0.4.0 (new plugin id `uzume.soullink-core`; v0.3.5 = v0.3.4 plus the display name "SoulLink Core"; v0.3.4 = v0.3.3 plus the time-budgeted map scan and the Lua icon decoder; v0.3.3 = v0.3.2 plus the Spanish language byte, LZ11 GARC entries, icon/text/personal diagnostics; v0.3.2 = v0.3.1 plus places that never stay empty: text fallback for `locations()`, names before lists, retried scans, `diagnostics()`; v0.3.1: fixes for zones and species names, and `locations()`) delivers live team stats, trainer/badges/money, location with names, encounter areas, battle state, wild encounters and names from the game text for Omega Ruby / Alpha Sapphire (v1.0 and v1.4); real-game verification of the derived and battle addresses is open (`docs/games/omega-ruby-alpha-sapphire.md`). Depends on Uzume plugin API v1 (since 0.11); see https://github.com/phabioo/uzume `docs/roadmap.md`.
 
 ## v0.1 Omega Ruby / Alpha Sapphire (3DS, Gen 6)
 
@@ -13,6 +13,7 @@ Status: in progress: skeleton and ORAS adapter; v0.4.1 (v0.4.0 plus the one-time
 ### Status v0.4.1 (ORAS)
 
 - v0.3.5: display name is now "SoulLink Core" (trademark avoidance) (manifest, i18n en/de, README); plugin id and interface unchanged (the id changed in 0.4.0).
+- v0.4.2: ORAS box icons decoded as palette images (variant D, 4-bit and 8-bit indices, zero padding) and looked up through the measured icon order table (`gen6.icon_order`, numbers only); `info().icon_rev` lets consumers key their icon caches.
 - v0.4.1: one-time debug export of raw icon GARC entries into the plugin cache (`diag/icon-<entry0>.bin`, `diag/icon-index.txt`) to settle whether the box icons are decoded wrongly or indexed wrongly; diagnostics key `icon_export`. Local to Fabio's PC, nothing enters the repository.
 - v0.4.0: new plugin id `uzume.soullink-core` (Uzume ADR 0030 D7); no migration and no compatibility alias; the `provides` interface `pokemon.core` is unchanged.
 

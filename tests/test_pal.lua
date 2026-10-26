@@ -124,8 +124,8 @@ t.case("icon_variants: shape, order and states", function()
     t.eq(e.png:sub(1, 8), "\137PNG\r\n\26\n")
     t.eq({ string.unpack("<I2I2", e.png, 9) }, { 40, 30, 13 })
   end
-  t.eq(labels, { "A", "B", "C", "D" }) -- E (plain texture) only for plain data
-  t.eq(v[1].desc, pal.VARIANTS.A.desc)
+  t.eq(labels, { "D", "A", "B", "C" }) -- default variant first; E (plain texture) only for plain data
+  t.eq(v[1].desc, pal.VARIANTS.D.desc)
   -- different readings give different pictures
   t.ok(v[1].png ~= v[2].png and v[1].png ~= v[3].png)
   t.eq({ a:icon_variants(0) }, { nil, "unknown_species" })
@@ -152,9 +152,8 @@ t.case("icon(): palette data uses the default variant in Lua, not fb.codec.bclim
   local png = assert(a:icon(25, 0))
   t.eq(called, before, "codec.bclim not used for the icon itself")
   local want = assert(a:icon_variants(25, 0))[1].png
-  t.eq(pal.DEFAULT_VARIANT, "A")
+  t.eq(pal.DEFAULT_VARIANT, "D")
   t.eq(png, want)
-  -- the PNG is the decoded colours of variant A
   t.eq(png:byte(13 + 4 * 0 + 0 + 0) ~= nil, true)
 end)
 
@@ -185,10 +184,34 @@ t.case("icon(): a plain texture whose first pixel is 0x0002 is decoded as plain,
   t.eq(l2, { "E", "A", "B", "C", "D" })
 end)
 
+-- real Omega Ruby icons: 12 colours, 4-bit high-nibble-first indices, zero padded to 4096 bytes
+local PAL12 = {}
+for i = 1, 12 do PAL12[i] = 0x0001 | ((i * 2) << 11) | ((i * 5) << 6) end
+local function padded12()
+  return pal_build.palette(40, 30, function(x, y) return (x * 2 + y) % 12 end, PAL12, { high_first = true, pad_to = 4096 })
+end
+
+t.case("zero-padded palette icon of 4096 data bytes is a palette, decoded as variant D", function()
+  local f = padded12()
+  t.eq(#f - 40, 4096)
+  t.eq(pal.layout(f), "palette")
+  local auto = assert(pal.decode_auto(f))
+  local d = assert(pal.decode_variant(f, "D"))
+  t.eq(auto.rgba, d.rgba)
+  t.eq(px(auto, 3, 2), { pal.color(PAL12[(3 * 2 + 2) % 12 + 1], "5551") })
+  -- non-zero trailing data: stays a plain texture
+  local g = f:sub(1, 4096 - 1) .. "\1" .. f:sub(4097)
+  t.eq(pal.layout(g), "plain16")
+  local a = make({ ["/a/0/9/1"] = garc_of(function() return padded12() end) })
+  t.ok(found(a))
+  t.eq(assert(a:icon(25, 0)), assert(a:icon_variants(25, 0))[1].png)
+end)
+
 t.case("icon cache key carries the decoder revision", function()
   local a, mock = make(palette_world())
   t.ok(found(a))
   a:icon(25, 0)
+  t.eq(icons.CACHE_REV, "r3-o1")
   t.ok(mock.fb.cache.read("icons/25-0-" .. icons.CACHE_REV .. ".png"))
   t.eq(mock.fb.cache.read("icons/25-0.png"), nil)
 end)
@@ -369,4 +392,16 @@ t.case("personal table is loaded by ticks (diagnostics show an attempt)", functi
   t.eq(a:diagnostics().personal_attempts, 0)
   for _ = 1, 100 do a:tick() end
   t.ok(a:diagnostics().personal_attempts >= 1)
+end)
+
+t.case("8-bit palette icon (20 colours) zero-padded to 4096 data bytes is a palette", function()
+  local pal20 = {}
+  for i = 1, 20 do pal20[i] = 0x0001 + (i << 11) end
+  local f = pal_build.palette(40, 30, function(x, y) return (x * 3 + y) % 20 end, pal20, { rows = 4, pad_to = 4096 })
+  t.eq(#f - 40, 4096)
+  t.eq(pal.layout(f), "palette")
+  local img = assert(pal.decode_auto(f))
+  t.eq({ img.width, img.height }, { 40, 30 })
+  t.eq(px(img, 5, 7), { pal.color(pal20[(5 * 3 + 7) % 20 + 1], "5551") })
+  t.eq(px(img, 39, 29), { pal.color(pal20[(39 * 3 + 29) % 20 + 1], "5551") })
 end)

@@ -31,7 +31,10 @@ function M.new(entry, detected, adapter)
     if has(adapter, "language") then language = adapter:language() or language end
     local revision
     if has(adapter, "revision") then revision = adapter:revision() end
+    local icon_rev
+    if has(adapter, "icon_rev") then icon_rev = adapter:icon_rev() end
     return {
+      icon_rev = icon_rev,
       game_id = entry.id,
       name = entry.name,
       gen = entry.gen,

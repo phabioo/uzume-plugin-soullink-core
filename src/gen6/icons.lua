@@ -8,6 +8,7 @@
 -- candidate validation) so no entry call comes near the 500 ms / 20M budget.
 local garc_entry = require("gen6.garc_entry")
 local pal_bclim = require("gen6.pal_bclim")
+local icon_order = require("gen6.icon_order")
 local M = {}
 
 M.CANDIDATE_PATHS = {}      -- known paths are not sourced; discovery finds the file
@@ -25,7 +26,8 @@ M.EXPORT_ENTRIES = { 0, 1, 25, 201, 255, 258, 261 } -- 0-based GARC entries of t
 M.EXPORT_RAW = { 1, 255 }        -- entries that are also exported undecompressed
 M.EXPORT_MAX_BINS = 12           -- cap of exported .bin files
 M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (fb.clock)
-M.CACHE_REV = "r2"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
+M.CACHE_REV = "r3-o1"  -- part of the PNG cache key: bump when decoding or the entry mapping changes (r3 = variant D palette decoder, o1 = measured icon order)
+M.REV = M.CACHE_REV    -- icon decoder revision exposed as info().icon_rev so consumers can key their own caches
 M.PROBE_PATH = "/a/0/9/1"   -- Project Pokemon ORAS file system: "971 box sprites" (diagnostics probe only)
 M.PROBE_ENTRIES = { 1, 25, 700 } -- 0-based GARC entries inspected by diagnostics()
 
@@ -43,7 +45,7 @@ function M.new(fb, personal)
     and codec.garc_file and codec.bclim and codec.png and fb.cache and true or false
 
   local state = can and "idle" or "unsupported" -- idle | scan | done | failed | unsupported
-  local data, path
+  local data, path, icon_count
   local forced, dirs, cands, steps = {}, {}, {}, 0
   local exp_status = "pending" -- diagnostics key icon_export
 
@@ -79,6 +81,8 @@ function M.new(fb, personal)
     local d = fb.rom.romfs(p)
     if type(d) ~= "string" or not validate(d) then return false end
     data, path, state = d, p, "done"
+    local okc, gg = pcall(codec.garc, d)
+    icon_count = okc and type(gg) == "table" and gg.count or nil
     pcall(fb.cache.write, M.INDEX_FILE, p .. "\n")
     if fb.log and fb.log.info then fb.log.info("icon archive accepted at " .. p) end
     return true
@@ -314,17 +318,23 @@ function M.new(fb, personal)
   function self.found() return state == "done" end
   function self.state() return state end
   function self.path() return path end
+  function self.icon_rev() return M.REV end
 
   -- Restart discovery (e.g. after a game change).
   function self.reset()
     if can then state = "idle" end
-    data, path, forced, dirs, cands, steps = nil, nil, {}, {}, {}, 0
+    data, path, icon_count, forced, dirs, cands, steps = nil, nil, nil, {}, {}, {}, 0
     probe, probe_key, first_reject = nil, nil, nil
     exp.state, exp.queue, exp.lines, exp.files, exp.bins, exp.g = "idle", nil, {}, 0, 0, nil
     exp_status = "pending"
   end
 
   local function entry_for(species, form)
+    -- the ORAS icon GARC (974 entries) is ordered by the measured table, not by species
+    if icon_count == icon_order.COUNT then
+      local e, exact = icon_order.entry(species, form)
+      if e then return e, exact end
+    end
     local idx = personal and personal.form_index(species, form)
     if idx then return idx, true end
     -- no such form or personal table unreadable: base icon, not cached under the form key
@@ -384,8 +394,11 @@ function M.new(fb, personal)
     if not blob then return nil, err end
     local layout = pal_bclim.layout(blob)
     if layout == nil then return nil, "unsupported" end
-    -- consumers may show only the first 4 entries: for plain 16-bit data E (the likely reading) goes first
-    local order = pal_bclim.ORDER
+    -- consumers may show only the first 4 entries: for plain 16-bit data E goes first, else the default variant
+    local order = { pal_bclim.DEFAULT_VARIANT }
+    for _, label in ipairs(pal_bclim.ORDER) do
+      if label ~= pal_bclim.DEFAULT_VARIANT then order[#order + 1] = label end
+    end
     if layout == "plain16" then order = { "E", "A", "B", "C", "D" } end
     local out = {}
     for _, label in ipairs(order) do
