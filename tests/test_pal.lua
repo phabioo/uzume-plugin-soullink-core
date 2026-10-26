@@ -211,7 +211,7 @@ t.case("icon cache key carries the decoder revision", function()
   local a, mock = make(palette_world())
   t.ok(found(a))
   a:icon(25, 0)
-  t.eq(icons.CACHE_REV, "r3")
+  t.eq(icons.CACHE_REV, "r3-o1")
   t.ok(mock.fb.cache.read("icons/25-0-" .. icons.CACHE_REV .. ".png"))
   t.eq(mock.fb.cache.read("icons/25-0.png"), nil)
 end)
@@ -392,4 +392,16 @@ t.case("personal table is loaded by ticks (diagnostics show an attempt)", functi
   t.eq(a:diagnostics().personal_attempts, 0)
   for _ = 1, 100 do a:tick() end
   t.ok(a:diagnostics().personal_attempts >= 1)
+end)
+
+t.case("8-bit palette icon (20 colours) zero-padded to 4096 data bytes is a palette", function()
+  local pal20 = {}
+  for i = 1, 20 do pal20[i] = 0x0001 + (i << 11) end
+  local f = pal_build.palette(40, 30, function(x, y) return (x * 3 + y) % 20 end, pal20, { rows = 4, pad_to = 4096 })
+  t.eq(#f - 40, 4096)
+  t.eq(pal.layout(f), "palette")
+  local img = assert(pal.decode_auto(f))
+  t.eq({ img.width, img.height }, { 40, 30 })
+  t.eq(px(img, 5, 7), { pal.color(pal20[(5 * 3 + 7) % 20 + 1], "5551") })
+  t.eq(px(img, 39, 29), { pal.color(pal20[(39 * 3 + 29) % 20 + 1], "5551") })
 end)

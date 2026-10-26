@@ -167,7 +167,10 @@ function M.new(entry, detected, adapter)
     if has(adapter, "language") then language = adapter:language() or language end
     local revision
     if has(adapter, "revision") then revision = adapter:revision() end
+    local icon_rev
+    if has(adapter, "icon_rev") then icon_rev = adapter:icon_rev() end
     return {
+      icon_rev = icon_rev,
       game_id = entry.id,
       name = entry.name,
       gen = entry.gen,
@@ -372,6 +375,113 @@ end
 return M
 
 end
+__mod["gen6.icon_order"] = function(...)
+-- Box icon order of the Gen 6 (Omega Ruby / Alpha Sapphire) icon GARC. The archive is NOT indexed by
+-- species: entry 0 is a placeholder, entries 1..972 hold all species in groups (each group has the
+-- species' megas / forms / gender or variant icons), entry 973 is the egg.
+-- Source: field measurement 2026-10-26 on a real Omega Ruby EU (all 974 entries compared by eye).
+-- Only numbers keyed by species ID are stored (our own data table, no names, no game data).
+--
+-- Record format: "species first n base_pos [form_positions]", records separated by ";":
+--   first = first GARC entry of the group, n = entries in the group,
+--   base_pos = 0-based position of form 0 inside the group,
+--   form_positions = optional comma list: 0-based group position of personal forms 1..k
+--   (a missing position is unknown and falls back to the base icon).
+local M = {}
+
+M.COUNT = 974   -- entries of the icon GARC this table describes
+M.EGG = 973     -- GARC entry of the egg icon
+M.SPECIES = 721
+
+local DATA = table.concat({
+  "1 1 1 0;2 2 1 0;3 3 2 1 0;4 5 1 0;5 6 1 0;6 7 3 2 0,1;7 10 1 0;8 11 1 0;9 12 2 1 0;10 14 1 0;11 15 1 0;12 16 1 0;",
+  "13 17 1 0;14 18 1 0;15 19 2 1 0;16 21 1 0;17 22 1 0;18 23 2 1 0;19 25 1 0;20 26 1 0;21 27 1 0;22 28 1 0;23 29 1 0;24 30 1 0;",
+  "25 31 9 0;26 40 1 0;27 41 1 0;28 42 1 0;29 43 1 0;30 44 1 0;31 45 1 0;32 46 1 0;33 47 1 0;34 48 1 0;35 49 2 0;36 51 2 0;",
+  "37 53 1 0;38 54 1 0;39 55 2 0;40 57 2 0;41 59 1 0;42 60 1 0;43 61 1 0;44 62 1 0;45 63 1 0;46 64 1 0;47 65 1 0;48 66 1 0;",
+  "49 67 1 0;50 68 1 0;51 69 1 0;52 70 1 0;53 71 1 0;54 72 1 0;55 73 1 0;56 74 1 0;57 75 1 0;58 76 1 0;59 77 1 0;60 78 1 0;",
+  "61 79 2 0;62 81 2 0;63 83 1 0;64 84 1 0;65 85 2 1 0;66 87 1 0;67 88 1 0;68 89 1 0;69 90 1 0;70 91 1 0;71 92 1 0;72 93 1 0;",
+  "73 94 1 0;74 95 1 0;75 96 1 0;76 97 1 0;77 98 1 0;78 99 1 0;79 100 1 0;80 101 2 1 0;81 103 1 0;82 104 1 0;83 105 1 0;84 106 1 0;",
+  "85 107 1 0;86 108 1 0;87 109 1 0;88 110 1 0;89 111 1 0;90 112 1 0;91 113 1 0;92 114 1 0;93 115 1 0;94 116 2 1 0;95 118 1 0;96 119 1 0;",
+  "97 120 1 0;98 121 1 0;99 122 2 0;100 124 1 0;101 125 1 0;102 126 1 0;103 127 1 0;104 128 1 0;105 129 1 0;106 130 1 0;107 131 1 0;108 132 1 0;",
+  "109 133 1 0;110 134 1 0;111 135 1 0;112 136 1 0;113 137 1 0;114 138 1 0;115 139 2 1 0;116 141 1 0;117 142 1 0;118 143 1 0;119 144 1 0;120 145 1 0;",
+  "121 146 1 0;122 147 1 0;123 148 1 0;124 149 1 0;125 150 1 0;126 151 1 0;127 152 2 1 0;128 154 1 0;129 155 1 0;130 156 2 1 0;131 158 1 0;132 159 1 0;",
+  "133 160 1 0;134 161 1 0;135 162 1 0;136 163 1 0;137 164 1 0;138 165 1 0;139 166 1 0;140 167 1 0;141 168 1 0;142 169 2 1 0;143 171 1 0;144 172 1 0;",
+  "145 173 1 0;146 174 1 0;147 175 1 0;148 176 1 0;149 177 1 0;150 178 3 2 0,1;151 181 1 0;152 182 1 0;153 183 1 0;154 184 1 0;155 185 1 0;156 186 1 0;",
+  "157 187 1 0;158 188 1 0;159 189 2 0;160 191 1 0;161 192 1 0;162 193 1 0;163 194 1 0;164 195 1 0;165 196 1 0;166 197 1 0;167 198 1 0;168 199 1 0;",
+  "169 200 1 0;170 201 1 0;171 202 1 0;172 203 1 0;173 204 2 0;174 206 2 0;175 208 1 0;176 209 1 0;177 210 1 0;178 211 1 0;179 212 1 0;180 213 1 0;",
+  "181 214 2 1 0;182 216 1 0;183 217 1 0;184 218 1 0;185 219 1 0;186 220 2 0;187 222 1 0;188 223 1 0;189 224 1 0;190 225 1 0;191 226 1 0;192 227 1 0;",
+  "193 228 1 0;194 229 1 0;195 230 1 0;196 231 1 0;197 232 1 0;198 233 1 0;199 234 1 0;200 235 1 0;201 236 48 0;202 284 1 0;203 285 1 0;204 286 1 0;",
+  "205 287 1 0;206 288 1 0;207 289 1 0;208 290 2 1 0;209 292 1 0;210 293 1 0;211 294 1 0;212 295 2 1 0;213 297 1 0;214 298 2 1 0;215 300 2 0;216 302 2 0;",
+  "217 304 1 0;218 305 1 0;219 306 1 0;220 307 1 0;221 308 1 0;222 309 1 0;223 310 1 0;224 311 1 0;225 312 1 0;226 313 1 0;227 314 1 0;228 315 1 0;",
+  "229 316 2 1 0;230 318 1 0;231 319 1 0;232 320 1 0;233 321 1 0;234 322 1 0;235 323 1 0;236 324 1 0;237 325 1 0;238 326 1 0;239 327 1 0;240 328 1 0;",
+  "241 329 1 0;242 330 1 0;243 331 1 0;244 332 2 0;245 334 1 0;246 335 1 0;247 336 1 0;248 337 2 1 0;249 339 1 0;250 340 1 0;251 341 1 0;252 342 1 0;",
+  "253 343 1 0;254 344 2 1 0;255 346 1 0;256 347 1 0;257 348 2 1 0;258 350 1 0;259 351 1 0;260 352 2 1 0;261 354 1 0;262 355 1 0;263 356 1 0;264 357 1 0;",
+  "265 358 1 0;266 359 1 0;267 360 1 0;268 361 1 0;269 362 1 0;270 363 1 0;271 364 1 0;272 365 1 0;273 366 1 0;274 367 1 0;275 368 1 0;276 369 1 0;",
+  "277 370 1 0;278 371 1 0;279 372 1 0;280 373 1 0;281 374 1 0;282 375 2 1 0;283 377 1 0;284 378 1 0;285 379 1 0;286 380 1 0;287 381 1 0;288 382 1 0;",
+  "289 383 1 0;290 384 1 0;291 385 1 0;292 386 1 0;293 387 1 0;294 388 1 0;295 389 1 0;296 390 1 0;297 391 1 0;298 392 1 0;299 393 1 0;300 394 1 0;",
+  "301 395 1 0;302 396 2 1 0;303 398 2 1 0;304 400 1 0;305 401 1 0;306 402 2 1 0;307 404 1 0;308 405 2 1 0;309 407 1 0;310 408 2 1 0;311 410 1 0;312 411 1 0;",
+  "313 412 1 0;314 413 1 0;315 414 2 0;316 416 1 0;317 417 1 0;318 418 1 0;319 419 2 1 0;320 421 1 0;321 422 1 0;322 423 1 0;323 424 2 1 0;324 426 1 0;",
+  "325 427 1 0;326 428 1 0;327 429 1 0;328 430 1 0;329 431 1 0;330 432 1 0;331 433 1 0;332 434 1 0;333 435 1 0;334 436 2 1 0;335 438 2 0;336 440 2 0;",
+  "337 442 1 0;338 443 1 0;339 444 1 0;340 445 1 0;341 446 1 0;342 447 1 0;343 448 1 0;344 449 1 0;345 450 1 0;346 451 1 0;347 452 1 0;348 453 1 0;",
+  "349 454 1 0;350 455 1 0;351 456 5 0 4,1,2;352 461 1 0;353 462 1 0;354 463 2 1 0;355 465 1 0;356 466 1 0;357 467 1 0;358 468 1 0;359 469 4 2 0;360 473 1 0;",
+  "361 474 1 0;362 475 2 1 0;363 477 1 0;364 478 1 0;365 479 1 0;366 480 1 0;367 481 1 0;368 482 1 0;369 483 1 0;370 484 1 0;371 485 1 0;372 486 1 0;",
+  "373 487 2 1 0;374 489 1 0;375 490 1 0;376 491 2 1 0;377 493 2 0;378 495 1 0;379 496 1 0;380 497 2 1 0;381 499 2 1 0;382 501 2 1 0;383 503 2 1 0;384 505 2 1 0;",
+  "385 507 1 0;386 508 4 0 1,2,3;387 512 1 0;388 513 1 0;389 514 2 0;390 516 1 0;391 517 1 0;392 518 1 0;393 519 1 0;394 520 1 0;395 521 1 0;396 522 1 0;",
+  "397 523 1 0;398 524 1 0;399 525 1 0;400 526 1 0;401 527 1 0;402 528 1 0;403 529 1 0;404 530 1 0;405 531 1 0;406 532 2 0;407 534 2 0;408 536 1 0;",
+  "409 537 1 0;410 538 1 0;411 539 1 0;412 540 3 1 2,0;413 543 3 2 1,0;414 546 1 0;415 547 1 0;416 548 1 0;417 549 1 0;418 550 1 0;419 551 1 0;420 552 1 0;",
+  "421 553 2 0;422 555 2 1 0;423 557 2 1 0;424 559 1 0;425 560 1 0;426 561 1 0;427 562 1 0;428 563 2 1 0;429 565 1 0;430 566 1 0;431 567 1 0;432 568 1 0;",
+  "433 569 1 0;434 570 1 0;435 571 1 0;436 572 1 0;437 573 1 0;438 574 1 0;439 575 1 0;440 576 1 0;441 577 1 0;442 578 1 0;443 579 1 0;444 580 1 0;",
+  "445 581 2 1 0;446 583 1 0;447 584 1 0;448 585 2 1 0;449 587 1 0;450 588 1 0;451 589 1 0;452 590 1 0;453 591 1 0;454 592 1 0;455 593 1 0;456 594 1 0;",
+  "457 595 1 0;458 596 1 0;459 597 1 0;460 598 2 1 0;461 600 1 0;462 601 1 0;463 602 1 0;464 603 1 0;465 604 1 0;466 605 1 0;467 606 2 0;468 608 2 0;",
+  "469 610 1 0;470 611 1 0;471 612 1 0;472 613 1 0;473 614 1 0;474 615 1 0;475 616 2 1 0;476 618 1 0;477 619 1 0;478 620 1 0;479 621 7 6;480 628 1 0;",
+  "481 629 1 0;482 630 1 0;483 631 1 0;484 632 1 0;485 633 1 0;486 634 1 0;487 635 2 0;488 637 1 0;489 638 1 0;490 639 1 0;491 640 1 0;492 641 3 0 1;",
+  "493 644 1 0;494 645 1 0;495 646 1 0;496 647 1 0;497 648 1 0;498 649 1 0;499 650 1 0;500 651 2 0;501 653 1 0;502 654 1 0;503 655 1 0;504 656 1 0;",
+  "505 657 1 0;506 658 1 0;507 659 1 0;508 660 1 0;509 661 1 0;510 662 1 0;511 663 1 0;512 664 1 0;513 665 2 0;514 667 2 0;515 669 1 0;516 670 1 0;",
+  "517 671 1 0;518 672 1 0;519 673 1 0;520 674 1 0;521 675 2 0;522 677 1 0;523 678 1 0;524 679 1 0;525 680 1 0;526 681 1 0;527 682 1 0;528 683 1 0;",
+  "529 684 2 0;530 686 2 0;531 688 2 1 0;532 690 1 0;533 691 1 0;534 692 1 0;535 693 1 0;536 694 1 0;537 695 1 0;538 696 1 0;539 697 2 0;540 699 1 0;",
+  "541 700 1 0;542 701 1 0;543 702 1 0;544 703 1 0;545 704 1 0;546 705 1 0;547 706 1 0;548 707 1 0;549 708 2 0;550 710 2 0 1;551 712 1 0;552 713 1 0;",
+  "553 714 1 0;554 715 1 0;555 716 2 0 1;556 718 1 0;557 719 1 0;558 720 1 0;559 721 1 0;560 722 1 0;561 723 1 0;562 724 1 0;563 725 1 0;564 726 1 0;",
+  "565 727 1 0;566 728 1 0;567 729 1 0;568 730 1 0;569 731 2 0;570 733 1 0;571 734 1 0;572 735 1 0;573 736 1 0;574 737 1 0;575 738 1 0;576 739 1 0;",
+  "577 740 2 0;578 742 1 0;579 743 1 0;580 744 1 0;581 745 1 0;582 746 1 0;583 747 1 0;584 748 2 0;585 750 4 1 2,0,3;586 754 4 1;587 758 1 0;588 759 1 0;",
+  "589 760 1 0;590 761 1 0;591 762 2 0;592 764 2 0;593 766 2 0;594 768 1 0;595 769 1 0;596 770 1 0;597 771 1 0;598 772 1 0;599 773 2 0;600 775 2 0;",
+  "601 777 2 0;602 779 1 0;603 780 1 0;604 781 1 0;605 782 1 0;606 783 1 0;607 784 2 0;608 786 1 0;609 787 1 0;610 788 1 0;611 789 1 0;612 790 1 0;",
+  "613 791 1 0;614 792 1 0;615 793 1 0;616 794 1 0;617 795 1 0;618 796 1 0;619 797 1 0;620 798 1 0;621 799 1 0;622 800 2 0;623 802 2 0;624 804 1 0;",
+  "625 805 1 0;626 806 1 0;627 807 1 0;628 808 1 0;629 809 1 0;630 810 1 0;631 811 1 0;632 812 1 0;633 813 1 0;634 814 1 0;635 815 1 0;636 816 1 0;",
+  "637 817 1 0;638 818 1 0;639 819 1 0;640 820 1 0;641 821 2 0;642 823 2 0;643 825 1 0;644 826 1 0;645 827 2 0;646 829 6 0;647 835 3 0;648 838 3 1;",
+  "649 841 5 0;650 908 1 0;651 909 1 0;652 910 1 0;653 905 1 0;654 906 1 0;655 907 1 0;656 911 1 0;657 912 1 0;658 913 2 0;659 886 1 0;660 887 1 0;",
+  "661 944 1 0;662 945 1 0;663 946 1 0;664 862 1 0;665 863 1 0;666 864 20 0;667 859 1 0;668 860 2 0;669 888 5 2 4,1,0,3;670 893 6 3 5,2,0,4,1;671 899 5 2 4,1,0,3;672 917 1 0;",
+  "673 918 1 0;674 943 1 0;675 919 1 0;676 846 11 0;677 922 1 0;678 923 2 0;679 934 1 0;680 935 1 0;681 936 2 1 0;682 951 1 0;683 952 1 0;684 932 1 0;",
+  "685 933 1 0;686 915 1 0;687 916 1 0;688 938 1 0;689 939 2 0;690 884 1 0;691 885 1 0;692 947 2 0;693 949 2 0;694 920 1 0;695 921 1 0;696 927 1 0;",
+  "697 928 1 0;698 929 1 0;699 930 1 0;700 961 2 0;701 955 1 0;702 931 1 0;703 960 1 0;704 957 1 0;705 958 1 0;706 959 1 0;707 953 2 0;708 857 1 0;",
+  "709 858 1 0;710 925 1 0;711 926 1 0;712 941 1 0;713 942 1 0;714 904 1 0;715 956 1 0;716 963 2 0;717 965 1 0;718 966 2 0;719 968 2 1 0;720 971 2 1 0;",
+  "721 970 1 0;"
+})
+
+local groups = {} -- species -> { first, n, base, forms = { [f] = pos } }
+for sp, first, n, base, rest in DATA:gmatch("(%d+) (%d+) (%d+) (%d+)([^;]*);") do
+  local g = { first = tonumber(first), n = tonumber(n), base = tonumber(base), forms = {} }
+  local f = 0
+  for pos in rest:gmatch("%d+") do f = f + 1; g.forms[f] = tonumber(pos) end
+  groups[tonumber(sp)] = g
+end
+
+-- GARC entry (0-based) of the icon of `species` (1..721) and personal form `form` (0 = base), exact.
+-- exact is false when the form position is unknown (the base icon is returned). nil for an unknown species.
+function M.entry(species, form)
+  local g = groups[species]
+  if not g then return nil end
+  if form == nil or form == 0 then return g.first + g.base, true end
+  local pos = g.forms[form]
+  if pos then return g.first + pos, true end
+  return g.first + g.base, false
+end
+
+-- Group record of a species ({ first, n, base, forms }) for integrity checks, or nil.
+function M.group(species) return groups[species] end
+
+return M
+
+end
 __mod["gen6.icons"] = function(...)
 -- Box icons of Gen 6 games, read at runtime from the player's own RomFS and
 -- converted to PNG with fb.codec.bclim + fb.codec.png. Nothing is shipped; the
@@ -383,6 +493,7 @@ __mod["gen6.icons"] = function(...)
 -- candidate validation) so no entry call comes near the 500 ms / 20M budget.
 local garc_entry = require("gen6.garc_entry")
 local pal_bclim = require("gen6.pal_bclim")
+local icon_order = require("gen6.icon_order")
 local M = {}
 
 M.CANDIDATE_PATHS = {}      -- known paths are not sourced; discovery finds the file
@@ -400,7 +511,8 @@ M.EXPORT_ENTRIES = { 0, 1, 25, 201, 255, 258, 261 } -- 0-based GARC entries of t
 M.EXPORT_RAW = { 1, 255 }        -- entries that are also exported undecompressed
 M.EXPORT_MAX_BINS = 12           -- cap of exported .bin files
 M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (fb.clock)
-M.CACHE_REV = "r3"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
+M.CACHE_REV = "r3-o1"  -- part of the PNG cache key: bump when decoding or the entry mapping changes (r3 = variant D palette decoder, o1 = measured icon order)
+M.REV = M.CACHE_REV    -- icon decoder revision exposed as info().icon_rev so consumers can key their own caches
 M.PROBE_PATH = "/a/0/9/1"   -- Project Pokemon ORAS file system: "971 box sprites" (diagnostics probe only)
 M.PROBE_ENTRIES = { 1, 25, 700 } -- 0-based GARC entries inspected by diagnostics()
 
@@ -418,7 +530,7 @@ function M.new(fb, personal)
     and codec.garc_file and codec.bclim and codec.png and fb.cache and true or false
 
   local state = can and "idle" or "unsupported" -- idle | scan | done | failed | unsupported
-  local data, path
+  local data, path, icon_count
   local forced, dirs, cands, steps = {}, {}, {}, 0
   local exp_status = "pending" -- diagnostics key icon_export
 
@@ -454,6 +566,8 @@ function M.new(fb, personal)
     local d = fb.rom.romfs(p)
     if type(d) ~= "string" or not validate(d) then return false end
     data, path, state = d, p, "done"
+    local okc, gg = pcall(codec.garc, d)
+    icon_count = okc and type(gg) == "table" and gg.count or nil
     pcall(fb.cache.write, M.INDEX_FILE, p .. "\n")
     if fb.log and fb.log.info then fb.log.info("icon archive accepted at " .. p) end
     return true
@@ -689,17 +803,23 @@ function M.new(fb, personal)
   function self.found() return state == "done" end
   function self.state() return state end
   function self.path() return path end
+  function self.icon_rev() return M.REV end
 
   -- Restart discovery (e.g. after a game change).
   function self.reset()
     if can then state = "idle" end
-    data, path, forced, dirs, cands, steps = nil, nil, {}, {}, {}, 0
+    data, path, icon_count, forced, dirs, cands, steps = nil, nil, nil, {}, {}, {}, 0
     probe, probe_key, first_reject = nil, nil, nil
     exp.state, exp.queue, exp.lines, exp.files, exp.bins, exp.g = "idle", nil, {}, 0, 0, nil
     exp_status = "pending"
   end
 
   local function entry_for(species, form)
+    -- the ORAS icon GARC (974 entries) is ordered by the measured table, not by species
+    if icon_count == icon_order.COUNT then
+      local e, exact = icon_order.entry(species, form)
+      if e then return e, exact end
+    end
     local idx = personal and personal.form_index(species, form)
     if idx then return idx, true end
     -- no such form or personal table unreadable: base icon, not cached under the form key
@@ -1597,6 +1717,7 @@ function M.attach(ctx)
     }
   end
 
+  function obj:icon_rev() return icon_store.icon_rev() end
   function obj:icon(species, form) return icon_store.icon(species, form) end
   function obj:icon_variants(species, form) return icon_store.icon_variants(species, form) end
   function obj:map_candidates() return map_store.candidates() end
