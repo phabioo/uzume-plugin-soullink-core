@@ -19,7 +19,7 @@ end
 
 -- Palette BCLIM. index(x, y) -> palette index; palette = list of u16; opts: high_first (first pixel
 -- in the high nibble), bits (4 or 8, default 4 for <= 16 colours), base (tile layout width, default
--- pow2(max(w, h))), rows (stored tile rows, default base / 8).
+-- pow2(max(w, h))), rows (stored tile rows, default base / 8), pad_to (zero-pad the data to this total size).
 function M.palette(w, h, index, palette, opts)
   opts = opts or {}
   local count = #palette
@@ -47,6 +47,7 @@ function M.palette(w, h, index, palette, opts)
   local head = pack("<I2I2", 2, count)
   for _, c in ipairs(palette) do head = head .. pack("<I2", c) end
   local data = head .. table.concat(out)
+  if opts.pad_to and #data < opts.pad_to then data = data .. string.rep("\0", opts.pad_to - #data) end
   return data .. M.footer(w, h, 7, #data)
 end
 

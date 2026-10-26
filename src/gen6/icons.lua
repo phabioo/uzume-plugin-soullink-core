@@ -25,7 +25,7 @@ M.EXPORT_ENTRIES = { 0, 1, 25, 201, 255, 258, 261 } -- 0-based GARC entries of t
 M.EXPORT_RAW = { 1, 255 }        -- entries that are also exported undecompressed
 M.EXPORT_MAX_BINS = 12           -- cap of exported .bin files
 M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (fb.clock)
-M.CACHE_REV = "r2"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
+M.CACHE_REV = "r3"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
 M.PROBE_PATH = "/a/0/9/1"   -- Project Pokemon ORAS file system: "971 box sprites" (diagnostics probe only)
 M.PROBE_ENTRIES = { 1, 25, 700 } -- 0-based GARC entries inspected by diagnostics()
 
@@ -384,8 +384,11 @@ function M.new(fb, personal)
     if not blob then return nil, err end
     local layout = pal_bclim.layout(blob)
     if layout == nil then return nil, "unsupported" end
-    -- consumers may show only the first 4 entries: for plain 16-bit data E (the likely reading) goes first
-    local order = pal_bclim.ORDER
+    -- consumers may show only the first 4 entries: for plain 16-bit data E goes first, else the default variant
+    local order = { pal_bclim.DEFAULT_VARIANT }
+    for _, label in ipairs(pal_bclim.ORDER) do
+      if label ~= pal_bclim.DEFAULT_VARIANT then order[#order + 1] = label end
+    end
     if layout == "plain16" then order = { "E", "A", "B", "C", "D" } end
     local out = {}
     for _, label in ipairs(order) do

@@ -400,7 +400,7 @@ M.EXPORT_ENTRIES = { 0, 1, 25, 201, 255, 258, 261 } -- 0-based GARC entries of t
 M.EXPORT_RAW = { 1, 255 }        -- entries that are also exported undecompressed
 M.EXPORT_MAX_BINS = 12           -- cap of exported .bin files
 M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (fb.clock)
-M.CACHE_REV = "r2"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
+M.CACHE_REV = "r3"  -- part of the PNG cache key: bump when the decoding changes (v0.3.3 cached wrong PNGs)
 M.PROBE_PATH = "/a/0/9/1"   -- Project Pokemon ORAS file system: "971 box sprites" (diagnostics probe only)
 M.PROBE_ENTRIES = { 1, 25, 700 } -- 0-based GARC entries inspected by diagnostics()
 
@@ -759,8 +759,11 @@ function M.new(fb, personal)
     if not blob then return nil, err end
     local layout = pal_bclim.layout(blob)
     if layout == nil then return nil, "unsupported" end
-    -- consumers may show only the first 4 entries: for plain 16-bit data E (the likely reading) goes first
-    local order = pal_bclim.ORDER
+    -- consumers may show only the first 4 entries: for plain 16-bit data E goes first, else the default variant
+    local order = { pal_bclim.DEFAULT_VARIANT }
+    for _, label in ipairs(pal_bclim.ORDER) do
+      if label ~= pal_bclim.DEFAULT_VARIANT then order[#order + 1] = label end
+    end
     if layout == "plain16" then order = { "E", "A", "B", "C", "D" } end
     local out = {}
     for _, label in ipairs(order) do
@@ -2161,7 +2164,8 @@ __mod["gen6.pal_bclim"] = function(...)
 -- Gen 6 palette BCLIM decoder in Lua (box icons). The Player's fb.codec.bclim decodes this variant
 -- too, but with one fixed set of choices (RGBA5551 colours, low nibble first) that did not give a
 -- usable picture on a real Omega Ruby (v0.3.3 field report). The choices are parameters here so
--- the maintainer can compare variants (icon_variants) and fix one default (DEFAULT_VARIANT).
+-- variants can be compared (icon_variants); the field report on a real Omega Ruby EU confirmed
+-- variant D, which is the default (DEFAULT_VARIANT).
 --
 -- Layout (pk3DS pk3DS.Core/CTR/Images/BCLIM.cs, GetPixelsViaPalette; Player texture.cpp), pixel data
 -- of a BCLIM whose footer format is 7 and whose data starts with u16 2:
@@ -2169,8 +2173,9 @@ __mod["gen6.pal_bclim"] = function(...)
 --   BaseSize/8 tiles wide (BaseSize = next power of two of max(w, h), 64 for 40x30). Indices are
 --   4 bit (two per byte) when the count is at most 16, else 8 bit.
 -- pk3DS reads the colours as RGB565 with low nibble first; its writer (BCLIM.cs) writes RGBA5551,
--- forces transparent pixels to index 0 and puts the FIRST pixel in the HIGH nibble. Which of these
--- the game files follow is unconfirmed, hence the four variants A..D below. Nothing is shipped.
+-- forces transparent pixels to index 0 and puts the FIRST pixel in the HIGH nibble. The game files
+-- follow the writer (RGBA5551, index 0 not forced transparent, high nibble first: variant D); the
+-- other variants stay for diagnostics. Nothing is shipped.
 local M = {}
 
 M.FOOTER = 0x28
@@ -2191,8 +2196,8 @@ M.VARIANTS = {
 -- is exactly pow2(w) x pow2(h) x 2 bytes (64 x 32 x 2 = 4096 for a 40x30 icon).
 M.VARIANTS.E = { plain = true, color = "5551", desc = "plain tiled RGBA5551, no palette" }
 M.ORDER = { "A", "B", "C", "D", "E" }
--- The variant icon() uses until the maintainer confirms one (one-line change).
-M.DEFAULT_VARIANT = "A"
+-- The variant icon() uses: D, confirmed on a real Omega Ruby EU (clean, correctly coloured icons).
+M.DEFAULT_VARIANT = "D"
 
 local function pow2_at_least_8(v)
   local p = 8
@@ -2217,14 +2222,38 @@ function M.is_palette(s)
   return a == 2 and count >= 1
 end
 
+-- True when the data (without footer) is a palette image whose index bytes needed for the image
+-- fit behind the palette and everything after them up to the end of the data is zero padding.
+-- Needed indices: all tiles up to the last tile row of the image (stride = BaseSize as in decode).
+local function padded_palette(s)
+  if not M.is_palette(s) then return false end
+  local w, h = footer(s)
+  local size = #s - M.FOOTER
+  local count = string.unpack("<I2", s, 3)
+  if count > 256 then return false end
+  local stride = pow2_at_least_8(math.max(w, h))
+  local pixels = ((h + 7) // 8) * (stride // 8) * 64
+  local nbytes = (count <= 16) and ((pixels + 1) // 2) or pixels
+  local last = 4 + 2 * count + nbytes
+  if last > size then return false end
+  for i = last + 1, size do
+    if s:byte(i) ~= 0 then return false end
+  end
+  return true
+end
+
 -- "plain16" when the data size is exactly that of a plain tiled 16-bit texture of the footer size
--- (format 7 RGBA5551 or 5 RGB565), "palette" when the palette signature holds and the size does not
--- match a plain texture, else nil.
+-- (format 7 RGBA5551 or 5 RGB565), unless the palette signature holds and the data is a palette
+-- image zero-padded to that size (real Omega Ruby icons: 40x30, 12 colours, 4096 data bytes), then
+-- "palette". Without the plain size, the palette signature means "palette", else nil.
 function M.layout(s)
   local w, h, fmt = footer(s)
   if not w or w < 1 or h < 1 or w > M.MAX_DIM or h > M.MAX_DIM then return nil end
   if fmt == 7 or fmt == 5 then
-    if #s - M.FOOTER == pow2_at_least_8(w) * pow2_at_least_8(h) * 2 then return "plain16" end
+    if #s - M.FOOTER == pow2_at_least_8(w) * pow2_at_least_8(h) * 2 then
+      if padded_palette(s) then return "palette" end
+      return "plain16"
+    end
   end
   if M.is_palette(s) then return "palette" end
   return nil
