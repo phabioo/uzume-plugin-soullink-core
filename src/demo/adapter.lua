@@ -119,7 +119,15 @@ function M.attach(ctx)
     if m then m.hp = 0 end
   end
   function handlers.battle_end() end_battle() end
-  function handlers.badge(s) badges = math.max(badges, s.index) end
+  function handlers.badge(s)
+    local old = badges
+    badges = math.max(badges, s.index)
+    if badges ~= old then
+      local new = {}
+      for i = old + 1, badges do new[#new + 1] = i end
+      fb.events.emit("badges.changed", { count = badges, new = new })
+    end
+  end
 
   function obj:demo() return true end
   function obj:revision() return "demo" end

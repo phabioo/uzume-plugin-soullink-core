@@ -360,7 +360,15 @@ function M.attach(ctx)
     if m then m.hp = 0 end
   end
   function handlers.battle_end() end_battle() end
-  function handlers.badge(s) badges = math.max(badges, s.index) end
+  function handlers.badge(s)
+    local old = badges
+    badges = math.max(badges, s.index)
+    if badges ~= old then
+      local new = {}
+      for i = old + 1, badges do new[#new + 1] = i end
+      fb.events.emit("badges.changed", { count = badges, new = new })
+    end
+  end
 
   function obj:demo() return true end
   function obj:revision() return "demo" end
@@ -1739,6 +1747,7 @@ M.MAP_STEP_EVERY = 4 -- ticks % 4 == 3 (names 2, zones 1, icons 0 mod 8); a step
 M.PERSONAL_START_TICK, M.PERSONAL_STEP_EVERY = 60, 30 -- personal table (growth, types) is loaded in the background
 M.DETECT_EVERY = 5
 M.CROSSCHECK_EVERY = 30
+M.BADGE_POLL_EVERY = 15
 M.ORIGIN_AS, M.ORIGIN_OR = 26, 27 -- PKHeX GameVersion (X 24, Y 25)
 M.MAX_MONEY = 999999
 M.MAX_STAT = 1500 -- upper bound for a stat or HP value (Blissey at level 100: 714)
@@ -1773,6 +1782,7 @@ function M.attach(ctx)
   local chosen
   local live_seen, checked = false, false
   local last_loc_key
+  local last_badges
   local warned = {}
 
   local overrides = addr.load_overrides(fb)
@@ -1985,6 +1995,20 @@ function M.attach(ctx)
       if key ~= last_loc_key then
         last_loc_key = key
         fb.events.emit("location.changed", loc)
+      end
+    end
+    if ticks % M.BADGE_POLL_EVERY == 0 then
+      local misc = A("misc")
+      local b = misc and fb.memory.u8(misc + MISC_BADGES)
+      if b then
+        if last_badges ~= nil and b ~= last_badges then
+          local new = {}
+          for i = 1, 8 do
+            if (b >> (i - 1)) & 1 == 1 and (last_badges >> (i - 1)) & 1 == 0 then new[#new + 1] = i end
+          end
+          fb.events.emit("badges.changed", { count = popcount(b), new = new })
+        end
+        last_badges = b
       end
     end
     if battle_mod then battle_mod.poll() end
