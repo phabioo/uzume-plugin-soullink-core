@@ -35,7 +35,9 @@ function M.new(entry, detected, adapter)
     if has(adapter, "revision") then revision = adapter:revision() end
     local icon_rev
     if has(adapter, "icon_rev") then icon_rev = adapter:icon_rev() end
+    local demo = has(adapter, "demo") and adapter:demo() == true
     return {
+      demo = demo,
       icon_rev = icon_rev,
       game_id = entry.id,
       name = entry.name,

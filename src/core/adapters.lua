@@ -8,7 +8,7 @@ local function try(name)
 end
 
 M.REGISTRY = {}
-for _, name in ipairs({ "gen6.oras" }) do
+for _, name in ipairs({ "gen6.oras", "demo.adapter" }) do
   M.REGISTRY[name] = try(name)
 end
 

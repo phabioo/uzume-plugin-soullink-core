@@ -11,6 +11,8 @@ main
 gen6.icons
 gen6.oras_addr
 gen6.oras_battle
+demo.data
+demo.adapter
 gen6.text
 gen6.zones
 gen6.darc
