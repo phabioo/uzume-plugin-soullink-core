@@ -19,6 +19,7 @@ M.CANDIDATE_PATHS = { "/a/1/9/5", "/a/1/9/6" }
 M.TYPE_OFFSET = 0x06 -- Type1, Type2 follows
 M.ENTRY_SIZE = 0x50
 M.GROWTH_OFFSET = 0x15
+M.BASE_STATS_OFFSET = 0x00 -- 6 bytes HP, Atk, Def, Spe, SpA, SpD (PKHeX PersonalInfo, recalled, not verified on a device)
 M.FORM_INDEX_OFFSET = 0x1C -- u16 FormStatsIndex (PKHeX PersonalInfoXY/ORAS), 0 = no extra forms
 M.FORM_COUNT_OFFSET = 0x20 -- u8 FormeCount
 M.MIN_ENTRIES = 722 -- species 0..721
@@ -141,6 +142,20 @@ function M.new(fb, opts)
     local e = raw_entry(idx)
     if not e then return nil, "no_form" end
     return { types = { e:byte(M.TYPE_OFFSET + 1), e:byte(M.TYPE_OFFSET + 2) }, growth = e:byte(goff + 1) }
+  end
+
+  -- { hp, atk, def, spe, spa, spd } base stats of a species form, or nil, "not_ready" | "unknown_species" | "no_form".
+  function self.base_stats(species, form)
+    if math.type(species) ~= "integer" or species < 1 or species >= M.MIN_ENTRIES then
+      return nil, "unknown_species"
+    end
+    local idx, err = self.form_index(species, form)
+    if not idx then return nil, err end
+    local e = raw_entry(idx)
+    if not e then return nil, "no_form" end
+    local base = {}
+    for i, k in ipairs({ "hp", "atk", "def", "spe", "spa", "spd" }) do base[k] = e:byte(M.BASE_STATS_OFFSET + i) end
+    return base
   end
 
   -- Plain strings and numbers only.

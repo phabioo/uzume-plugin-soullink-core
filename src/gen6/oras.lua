@@ -11,6 +11,7 @@ local addr = require("gen6.oras_addr")
 local text = require("gen6.text")
 local zones = require("gen6.zones")
 local oras_battle = require("gen6.oras_battle")
+local pk6_edit = require("gen6.pk6_edit")
 
 local M = {}
 
@@ -470,6 +471,95 @@ function M.attach(ctx)
     local list = battle_mod.encounters()
     for _, e in ipairs(list) do e.species_name = peek_name("species", e.species) end
     return list
+  end
+
+  -- ---- write helpers (build write operations only, nothing is written here) ----
+
+  function obj:edit_limits()
+    local L = pk6_edit.LIMITS
+    local out = {}
+    for k, v in pairs(L) do out[k] = v end
+    out.money = M.MAX_MONEY
+    out.team_slots, out.boxes, out.box_slots = M.PARTY_SLOTS, M.BOX_COUNT, M.BOX_SLOTS
+    return out
+  end
+
+  function obj:names_list(kind)
+    return names.list(kind)
+  end
+
+  -- Location: { kind = "team", slot = 1..6 } or { kind = "box", box = 1..31, slot = 1..30 }.
+  -- Returns { addr, bytes, ops = { {addr, bytes}, ... }, warnings = { ... }, record = <new record> }:
+  -- apply every op of `ops` in order with fb.memory.write. `addr`/`bytes` are the first op. Errors:
+  -- nil, "not_ready" | "invalid_location" | "empty_slot" | "growth_unavailable" | "invalid_<field>" |
+  -- "ev_total" | "unknown_field:<name>".
+  function obj:encode_pokemon(location, fields)
+    local set = detect()
+    if not set then return nil, "not_ready" end
+    if type(location) ~= "table" or type(fields) ~= "table" then return nil, "invalid_location" end
+    local base, size, live_ext, ext_raw
+    local plain, ok
+    if location.kind == "team" then
+      local slot = location.slot
+      if not (math.type(slot) == "integer" and slot >= 1 and slot <= M.PARTY_SLOTS) then return nil, "invalid_location" end
+      base = set.a.party + (slot - 1) * M.PARTY_STRIDE
+      local raw = fb.memory.bytes(base, 0xE8)
+      if not raw or #raw < 0xE8 then return nil, "not_ready" end
+      ext_raw = fb.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN)
+      if ext_raw and #ext_raw == M.STATS_LEN then
+        local p2, ok2 = pk6.decrypt(raw .. ext_raw .. string.rep("\0", pk6.SIZE_PARTY - 0xE8 - M.STATS_LEN))
+        local r2 = ok2 and pk6.parse(p2)
+        if r2 and r2.party_ext and M.live_sane(r2.party_ext) then plain, ok, live_ext = p2, ok2, true end
+      end
+      if not plain then plain, ok = pk6.decrypt(raw .. string.rep("\0", 232 - 0xE8)) end
+      size = 0xE8
+    elseif location.kind == "box" then
+      local b, s = location.box, location.slot
+      if not (math.type(b) == "integer" and b >= 1 and b <= M.BOX_COUNT and math.type(s) == "integer" and s >= 1 and
+        s <= M.BOX_SLOTS) then
+        return nil, "invalid_location"
+      end
+      base = set.a.box + ((b - 1) * M.BOX_SLOTS + (s - 1)) * M.BOX_SIZE
+      local raw = fb.memory.bytes(base, M.BOX_SIZE)
+      if not raw or #raw < M.BOX_SIZE then return nil, "not_ready" end
+      plain, ok = pk6.decrypt(raw)
+      size = M.BOX_SIZE
+    else
+      return nil, "invalid_location"
+    end
+    local rec = ok and pk6.parse(plain)
+    if not rec or rec.species < 1 or rec.species > pk6.MAX_SPECIES then return nil, "empty_slot" end
+    local level
+    if live_ext then level = rec.party_ext.level else
+      local rate = pers.growth_rate(rec.species)
+      level = rate and growth.level_from_exp(rate, rec.exp) or nil
+    end
+    local new, warnings = pk6_edit.apply(plain, fields, {
+      growth_rate = pers.growth_rate,
+      base_stats = function(sp, form)
+        return (pers.base_stats(sp, form))
+      end,
+      species_name = function(id) return peek_name("species", id) end,
+      current_level = level,
+    })
+    if not new then return nil, warnings end
+    local enc = pk6.seal(new)
+    local ops = { { addr = base, bytes = enc:sub(1, size) } }
+    if live_ext then ops[2] = { addr = base + M.STATS_OFFSET, bytes = enc:sub(0xE9, 0xE8 + M.STATS_LEN) } end
+    local record = pk6.parse(new)
+    if record and not live_ext then record.party_ext = nil end
+    return { addr = ops[1].addr, bytes = ops[1].bytes, ops = ops, warnings = warnings, record = record }
+  end
+
+  -- Money (0..999999) at misc + 8.
+  function obj:encode_money(value)
+    local set = detect()
+    if not set then return nil, "not_ready" end
+    if not (math.type(value) == "integer" and value >= 0 and value <= M.MAX_MONEY) then return nil, "invalid_money" end
+    local misc = A("misc")
+    if not misc then return nil, "unsupported" end
+    local bytes = string.pack("<I4", value)
+    return { addr = misc + MISC_MONEY, bytes = bytes, ops = { { addr = misc + MISC_MONEY, bytes = bytes } }, warnings = {} }
   end
 
   function obj:box_count()

@@ -6,6 +6,7 @@ gen6.growth
 gen6.oras
 gen6.personal
 gen6.pk6
+gen6.pk6_edit
 main
 gen6.icons
 gen6.oras_addr

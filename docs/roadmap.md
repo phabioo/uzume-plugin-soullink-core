@@ -1,6 +1,6 @@
 # Roadmap
 
-Status: in progress: skeleton and ORAS adapter; v0.4.2 (v0.4.1 plus correct ORAS box icons); v0.4.1 (v0.4.0 plus the one-time icon debug export); v0.4.0 (new plugin id `uzume.soullink-core`; v0.3.5 = v0.3.4 plus the display name "SoulLink Core"; v0.3.4 = v0.3.3 plus the time-budgeted map scan and the Lua icon decoder; v0.3.3 = v0.3.2 plus the Spanish language byte, LZ11 GARC entries, icon/text/personal diagnostics; v0.3.2 = v0.3.1 plus places that never stay empty: text fallback for `locations()`, names before lists, retried scans, `diagnostics()`; v0.3.1: fixes for zones and species names, and `locations()`) delivers live team stats, trainer/badges/money, location with names, encounter areas, battle state, wild encounters and names from the game text for Omega Ruby / Alpha Sapphire (v1.0 and v1.4); real-game verification of the derived and battle addresses is open (`docs/games/omega-ruby-alpha-sapphire.md`). Depends on Uzume plugin API v1 (since 0.11); see https://github.com/phabioo/uzume `docs/roadmap.md`.
+Status: in progress: skeleton and ORAS adapter; v0.5.0 (v0.4.2 plus write helpers for the Creature Editor, no memory writes inside this plugin); v0.4.2 (v0.4.1 plus correct ORAS box icons); v0.4.1 (v0.4.0 plus the one-time icon debug export); v0.4.0 (new plugin id `uzume.soullink-core`; v0.3.5 = v0.3.4 plus the display name "SoulLink Core"; v0.3.4 = v0.3.3 plus the time-budgeted map scan and the Lua icon decoder; v0.3.3 = v0.3.2 plus the Spanish language byte, LZ11 GARC entries, icon/text/personal diagnostics; v0.3.2 = v0.3.1 plus places that never stay empty: text fallback for `locations()`, names before lists, retried scans, `diagnostics()`; v0.3.1: fixes for zones and species names, and `locations()`) delivers live team stats, trainer/badges/money, location with names, encounter areas, battle state, wild encounters and names from the game text for Omega Ruby / Alpha Sapphire (v1.0 and v1.4); real-game verification of the derived and battle addresses is open (`docs/games/omega-ruby-alpha-sapphire.md`). Depends on Uzume plugin API v1 (since 0.11); see https://github.com/phabioo/uzume `docs/roadmap.md`.
 
 ## v0.1 Omega Ruby / Alpha Sapphire (3DS, Gen 6)
 
@@ -9,6 +9,11 @@ Status: in progress: skeleton and ORAS adapter; v0.4.2 (v0.4.1 plus correct ORAS
 - Asset extraction from the player's own game files into the local plugin cache (box icons, sprites, region map); nothing is stored in this repository.
 - Location/route table keyed by internal IDs, with self-recorded map coordinates; `provides` interface for other plugins.
 - Offsets documented per game in `docs/games/<game>.md`; verified locally by the maintainer with the Uzume developer mode.
+
+### Status v0.5.0 (ORAS)
+
+- v0.5.0: PK6 encrypt, checksum and seal in `gen6.pk6` (pure Lua, same algorithm as `fb.codec.pk6_*`); `gen6.pk6_edit` (validation, EXP from level via the game's growth rate, nature, IVs/EVs with the 510 total, moves with PP, PID based shiny, held item, nickname, live party level/HP/stats recomputed from the personal base stats); `pokemon.core` gains `encode_pokemon(location, fields)`, `encode_money(value)`, `edit_limits()`, `names_list(kind)` and the feature flags `edit_pokemon edit_money edit_items name_lists` (contract v0.4, existing calls unchanged). The helpers only return write operations `{ addr, bytes }`; the Creature Editor plugin writes them with `fb.memory.write`.
+- Open: `encode_item` (answers `nil, "unsupported"`; no bag/pocket offsets are documented in this repository, none were invented); PP of a newly chosen move (no move table is read: the caller passes `pp`, else a placeholder of 5 plus the warning `pp_unknown`); ability changes are not derived from the personal table (`ability` can be set by id, a species change warns `ability_unchanged`); personal base stat offsets 0x00-0x05 are PKHeX knowledge, not verified on a device; nothing here is verified on a real game.
 
 ### Status v0.4.1 (ORAS)
 

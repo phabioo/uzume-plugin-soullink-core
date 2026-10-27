@@ -1,7 +1,7 @@
 {
   "id": "uzume.soullink-core",
   "name": "SoulLink Core",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "api": 1,
   "type": "script",
   "provides": ["pokemon.core"],
