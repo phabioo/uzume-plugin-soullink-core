@@ -2,7 +2,7 @@
 
 Shared Pokémon foundation: game detection, memory adapters and asset extraction for other Uzume plugins.
 
-Status: **in progress: game detection for Gen 3-7, `pokemon.core` interface, Omega Ruby/Alpha Sapphire adapter (team with live stats, boxes, trainer, badges, location, encounter areas, battle, wild encounters, names from game text).**
+Status: **in progress: game detection for Gen 3-7, `pokemon.core` interface, Omega Ruby/Alpha Sapphire adapter (team with live stats, boxes, trainer, badges, location, encounter areas, battle, wild encounters, names from game text, write helpers for the Creature Editor).**
 
 Build and test (needs `lua5.4`): `lua5.4 tools/bundle.lua` (writes `plugin/main.lua`), `lua5.4 tests/run.lua`.
 

@@ -138,11 +138,13 @@ __mod["core.interface"] = function(...)
 local M = {}
 
 local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "trainer", "name",
-  "species_info", "areas", "locations", "zone_info", "icon", "icon_variants", "map_candidates", "map_image", "map_selected", "diagnostics" }
+  "species_info", "areas", "locations", "zone_info", "icon", "icon_variants", "map_candidates", "map_image", "map_selected", "diagnostics",
+  "encode_pokemon", "encode_money", "encode_item", "edit_limits", "names_list" }
 local FEATURE = {
   team = "team", box = "box", location = "location",
   battle = "battle", encounters = "encounters", badges = "badges", trainer = "trainer", name = "names",
   areas = "areas", locations = "locations", icon = "icons", map_candidates = "map", diagnostics = "diagnostics",
+  encode_pokemon = "edit_pokemon", encode_money = "edit_money", encode_item = "edit_items", names_list = "name_lists",
 }
 
 local function has(adapter, name)
@@ -1380,6 +1382,7 @@ local addr = require("gen6.oras_addr")
 local text = require("gen6.text")
 local zones = require("gen6.zones")
 local oras_battle = require("gen6.oras_battle")
+local pk6_edit = require("gen6.pk6_edit")
 
 local M = {}
 
@@ -1839,6 +1842,95 @@ function M.attach(ctx)
     local list = battle_mod.encounters()
     for _, e in ipairs(list) do e.species_name = peek_name("species", e.species) end
     return list
+  end
+
+  -- ---- write helpers (build write operations only, nothing is written here) ----
+
+  function obj:edit_limits()
+    local L = pk6_edit.LIMITS
+    local out = {}
+    for k, v in pairs(L) do out[k] = v end
+    out.money = M.MAX_MONEY
+    out.team_slots, out.boxes, out.box_slots = M.PARTY_SLOTS, M.BOX_COUNT, M.BOX_SLOTS
+    return out
+  end
+
+  function obj:names_list(kind)
+    return names.list(kind)
+  end
+
+  -- Location: { kind = "team", slot = 1..6 } or { kind = "box", box = 1..31, slot = 1..30 }.
+  -- Returns { addr, bytes, ops = { {addr, bytes}, ... }, warnings = { ... }, record = <new record> }:
+  -- apply every op of `ops` in order with fb.memory.write. `addr`/`bytes` are the first op. Errors:
+  -- nil, "not_ready" | "invalid_location" | "empty_slot" | "growth_unavailable" | "invalid_<field>" |
+  -- "ev_total" | "unknown_field:<name>".
+  function obj:encode_pokemon(location, fields)
+    local set = detect()
+    if not set then return nil, "not_ready" end
+    if type(location) ~= "table" or type(fields) ~= "table" then return nil, "invalid_location" end
+    local base, size, live_ext, ext_raw
+    local plain, ok
+    if location.kind == "team" then
+      local slot = location.slot
+      if not (math.type(slot) == "integer" and slot >= 1 and slot <= M.PARTY_SLOTS) then return nil, "invalid_location" end
+      base = set.a.party + (slot - 1) * M.PARTY_STRIDE
+      local raw = fb.memory.bytes(base, 0xE8)
+      if not raw or #raw < 0xE8 then return nil, "not_ready" end
+      ext_raw = fb.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN)
+      if ext_raw and #ext_raw == M.STATS_LEN then
+        local p2, ok2 = pk6.decrypt(raw .. ext_raw .. string.rep("\0", pk6.SIZE_PARTY - 0xE8 - M.STATS_LEN))
+        local r2 = ok2 and pk6.parse(p2)
+        if r2 and r2.party_ext and M.live_sane(r2.party_ext) then plain, ok, live_ext = p2, ok2, true end
+      end
+      if not plain then plain, ok = pk6.decrypt(raw .. string.rep("\0", 232 - 0xE8)) end
+      size = 0xE8
+    elseif location.kind == "box" then
+      local b, s = location.box, location.slot
+      if not (math.type(b) == "integer" and b >= 1 and b <= M.BOX_COUNT and math.type(s) == "integer" and s >= 1 and
+        s <= M.BOX_SLOTS) then
+        return nil, "invalid_location"
+      end
+      base = set.a.box + ((b - 1) * M.BOX_SLOTS + (s - 1)) * M.BOX_SIZE
+      local raw = fb.memory.bytes(base, M.BOX_SIZE)
+      if not raw or #raw < M.BOX_SIZE then return nil, "not_ready" end
+      plain, ok = pk6.decrypt(raw)
+      size = M.BOX_SIZE
+    else
+      return nil, "invalid_location"
+    end
+    local rec = ok and pk6.parse(plain)
+    if not rec or rec.species < 1 or rec.species > pk6.MAX_SPECIES then return nil, "empty_slot" end
+    local level
+    if live_ext then level = rec.party_ext.level else
+      local rate = pers.growth_rate(rec.species)
+      level = rate and growth.level_from_exp(rate, rec.exp) or nil
+    end
+    local new, warnings = pk6_edit.apply(plain, fields, {
+      growth_rate = pers.growth_rate,
+      base_stats = function(sp, form)
+        return (pers.base_stats(sp, form))
+      end,
+      species_name = function(id) return peek_name("species", id) end,
+      current_level = level,
+    })
+    if not new then return nil, warnings end
+    local enc = pk6.seal(new)
+    local ops = { { addr = base, bytes = enc:sub(1, size) } }
+    if live_ext then ops[2] = { addr = base + M.STATS_OFFSET, bytes = enc:sub(0xE9, 0xE8 + M.STATS_LEN) } end
+    local record = pk6.parse(new)
+    if record and not live_ext then record.party_ext = nil end
+    return { addr = ops[1].addr, bytes = ops[1].bytes, ops = ops, warnings = warnings, record = record }
+  end
+
+  -- Money (0..999999) at misc + 8.
+  function obj:encode_money(value)
+    local set = detect()
+    if not set then return nil, "not_ready" end
+    if not (math.type(value) == "integer" and value >= 0 and value <= M.MAX_MONEY) then return nil, "invalid_money" end
+    local misc = A("misc")
+    if not misc then return nil, "unsupported" end
+    local bytes = string.pack("<I4", value)
+    return { addr = misc + MISC_MONEY, bytes = bytes, ops = { { addr = misc + MISC_MONEY, bytes = bytes } }, warnings = {} }
   end
 
   function obj:box_count()
@@ -2541,6 +2633,7 @@ M.CANDIDATE_PATHS = { "/a/1/9/5", "/a/1/9/6" }
 M.TYPE_OFFSET = 0x06 -- Type1, Type2 follows
 M.ENTRY_SIZE = 0x50
 M.GROWTH_OFFSET = 0x15
+M.BASE_STATS_OFFSET = 0x00 -- 6 bytes HP, Atk, Def, Spe, SpA, SpD (PKHeX PersonalInfo, recalled, not verified on a device)
 M.FORM_INDEX_OFFSET = 0x1C -- u16 FormStatsIndex (PKHeX PersonalInfoXY/ORAS), 0 = no extra forms
 M.FORM_COUNT_OFFSET = 0x20 -- u8 FormeCount
 M.MIN_ENTRIES = 722 -- species 0..721
@@ -2663,6 +2756,20 @@ function M.new(fb, opts)
     local e = raw_entry(idx)
     if not e then return nil, "no_form" end
     return { types = { e:byte(M.TYPE_OFFSET + 1), e:byte(M.TYPE_OFFSET + 2) }, growth = e:byte(goff + 1) }
+  end
+
+  -- { hp, atk, def, spe, spa, spd } base stats of a species form, or nil, "not_ready" | "unknown_species" | "no_form".
+  function self.base_stats(species, form)
+    if math.type(species) ~= "integer" or species < 1 or species >= M.MIN_ENTRIES then
+      return nil, "unknown_species"
+    end
+    local idx, err = self.form_index(species, form)
+    if not idx then return nil, err end
+    local e = raw_entry(idx)
+    if not e then return nil, "no_form" end
+    local base = {}
+    for i, k in ipairs({ "hp", "atk", "def", "spe", "spa", "spd" }) do base[k] = e:byte(M.BASE_STATS_OFFSET + i) end
+    return base
   end
 
   -- Plain strings and numbers only.
@@ -2797,6 +2904,370 @@ function M.parse(plain)
     }
   end
   return rec
+end
+
+-- Crypto (PKHeX PokeCrypto.cs, same algorithm as the host helpers fb.codec.pk6_decrypt / pk6_encrypt,
+-- kept here so write helpers do not depend on the host). seed = encryption constant (first u32);
+-- seed = seed * 0x41C64E6D + 0x6073 (32 bit); each u16 is xored with seed >> 16. Bytes 0x08..0xE7 are
+-- crypted and their four 56-byte blocks shuffled by (EC >> 13) & 31 modulo 24; the party extension
+-- 0xE8.. is crypted with a fresh stream seeded by the same constant.
+local ORDER = {
+  {0,1,2,3},{0,1,3,2},{0,2,1,3},{0,3,1,2},{0,2,3,1},{0,3,2,1},
+  {1,0,2,3},{1,0,3,2},{2,0,1,3},{3,0,1,2},{2,0,3,1},{3,0,2,1},
+  {1,2,0,3},{1,3,0,2},{2,1,0,3},{3,1,0,2},{2,3,0,1},{3,2,0,1},
+  {1,2,3,0},{1,3,2,0},{2,1,3,0},{3,1,2,0},{2,3,1,0},{3,2,1,0},
+}
+local BLOCK = 56
+
+-- u16 sum over 0x08..0xE7 of a decrypted structure.
+function M.checksum(plain)
+  local sum = 0
+  for o = 0x08, 0xE6, 2 do sum = sum + string.unpack("<I2", plain, o + 1) end
+  return sum & 0xFFFF
+end
+
+local function crypt(s, seed)
+  local out = {}
+  for i = 1, #s - 1, 2 do
+    seed = (seed * 0x41C64E6D + 0x6073) & 0xFFFFFFFF
+    out[#out + 1] = string.pack("<I2", string.unpack("<I2", s, i) ~ (seed >> 16))
+  end
+  if #s % 2 == 1 then out[#out + 1] = s:sub(-1) end
+  return table.concat(out)
+end
+
+-- decrypted block i (0-based) = encrypted block ORDER[sv][i]
+local function shuffle(body, sv, inverse)
+  local order = ORDER[sv % 24 + 1]
+  local out = {}
+  for i = 1, 4 do
+    local from = order[i]
+    if inverse then
+      out[from + 1] = body:sub((i - 1) * BLOCK + 1, i * BLOCK)
+    else
+      out[i] = body:sub(from * BLOCK + 1, (from + 1) * BLOCK)
+    end
+  end
+  return table.concat(out)
+end
+
+local function good_len(s)
+  return type(s) == "string" and (#s == M.SIZE_STORED or #s == M.SIZE_PARTY)
+end
+
+-- enc -> plain, checksum_ok; nil, "bad_length" for other input.
+function M.decrypt(enc)
+  if not good_len(enc) then return nil, "bad_length" end
+  local ec = string.unpack("<I4", enc)
+  local body = shuffle(crypt(enc:sub(9, 232), ec), (ec >> 13) & 31, false)
+  local plain = enc:sub(1, 8) .. body
+  if #enc == M.SIZE_PARTY then plain = plain .. crypt(enc:sub(233), ec) end
+  return plain, string.unpack("<I2", plain, 7) == M.checksum(plain)
+end
+
+-- Encrypts without touching the checksum.
+function M.encrypt(plain)
+  if not good_len(plain) then return nil, "bad_length" end
+  local ec = string.unpack("<I4", plain)
+  local body = crypt(shuffle(plain:sub(9, 232), (ec >> 13) & 31, true), ec)
+  local enc = plain:sub(1, 8) .. body
+  if #plain == M.SIZE_PARTY then enc = enc .. crypt(plain:sub(233), ec) end
+  return enc
+end
+
+-- plain with a recomputed checksum at 0x06.
+function M.with_checksum(plain)
+  if not good_len(plain) then return nil, "bad_length" end
+  return plain:sub(1, 6) .. string.pack("<I2", M.checksum(plain)) .. plain:sub(9)
+end
+
+-- Recomputes the checksum, then encrypts.
+function M.seal(plain)
+  local p, err = M.with_checksum(plain)
+  if not p then return nil, err end
+  return M.encrypt(p)
+end
+
+-- UTF-8 -> UTF-16LE with exactly `chars` code units (cut or zero padded; no terminator is forced
+-- when the text fills all units, as in the game's 12 character + terminator field when chars = 13).
+function M.utf8_to_utf16le(s, chars)
+  local out, n = {}, 0
+  for _, c in utf8.codes(s) do
+    if c >= 0x10000 then
+      if n + 2 > chars then break end
+      c = c - 0x10000
+      out[#out + 1] = string.pack("<I2I2", 0xD800 + (c >> 10), 0xDC00 + (c & 0x3FF))
+      n = n + 2
+    else
+      if n + 1 > chars then break end
+      out[#out + 1] = string.pack("<I2", c)
+      n = n + 1
+    end
+  end
+  return table.concat(out) .. string.rep("\0", (chars - n) * 2)
+end
+
+return M
+
+end
+__mod["gen6.pk6_edit"] = function(...)
+-- Pure editing of a decrypted PK6 (232/260 bytes): validation, field writes, EXP from level, PID shiny
+-- adjustment, party-extension stats. No memory access. Offsets: gen6.pk6 (PKHeX PK6.cs).
+-- Moves PP 0x62 (4 x u8), PP ups 0x66 (4 x u8), nickname 0x40 (13 UTF-16 units) are from the same file.
+local pk6 = require("gen6.pk6")
+local growth = require("gen6.growth")
+
+local M = {}
+
+-- ORAS maxima (PKHeX Legal.cs: MaxSpeciesID_6 721, MaxMoveID_6_AO 617, MaxItemID_6_AO 775,
+-- MaxAbilityID_6_AO 191), recalled, not re-fetched.
+M.LIMITS = {
+  species = 721, move = 617, item = 775, ability = 191, nature = 24, form = 31, level = 100,
+  iv = 31, ev = 255, ev_total = 510, moves = 4, pp = 64, nickname = 12,
+}
+M.DEFAULT_PP = 5 -- placeholder for a new move when the caller gives no PP (lowest base PP in Gen 6)
+
+local STATS = { "hp", "atk", "def", "spe", "spa", "spd" }
+M.STATS = STATS
+local KNOWN = { species = true, form = true, level = true, nature = true, ivs = true, evs = true, moves = true,
+  pp = true, shiny = true, held_item = true, nickname = true, ability = true }
+
+local function isint(v, lo, hi) return math.type(v) == "integer" and v >= lo and v <= hi end
+
+local OFF = pk6.OFF
+local OFF_PP, OFF_PPUPS = 0x62, 0x66
+
+-- Validates `fields` against `rec` (the parsed current record). Returns nil or an error string
+-- ("invalid_<field>", "ev_total", "unknown_field:<name>").
+function M.validate(fields, rec)
+  local L = M.LIMITS
+  if type(fields) ~= "table" then return "invalid_fields" end
+  for k in pairs(fields) do
+    if not KNOWN[k] then return "unknown_field:" .. tostring(k) end
+  end
+  if fields.species ~= nil and not isint(fields.species, 1, L.species) then return "invalid_species" end
+  if fields.form ~= nil and not isint(fields.form, 0, L.form) then return "invalid_form" end
+  if fields.level ~= nil and not isint(fields.level, 1, L.level) then return "invalid_level" end
+  if fields.nature ~= nil and not isint(fields.nature, 0, L.nature) then return "invalid_nature" end
+  if fields.held_item ~= nil and not isint(fields.held_item, 0, L.item) then return "invalid_item" end
+  if fields.ability ~= nil and not isint(fields.ability, 1, L.ability) then return "invalid_ability" end
+  if fields.shiny ~= nil and type(fields.shiny) ~= "boolean" then return "invalid_shiny" end
+  if fields.nickname ~= nil then
+    if type(fields.nickname) ~= "string" or not utf8.len(fields.nickname) or utf8.len(fields.nickname) > L.nickname then
+      return "invalid_nickname"
+    end
+  end
+  for _, key in ipairs({ "ivs", "evs" }) do
+    local t = fields[key]
+    if t ~= nil then
+      if type(t) ~= "table" then return "invalid_" .. key end
+      local hi = key == "ivs" and L.iv or L.ev
+      for k, v in pairs(t) do
+        local known = false
+        for _, s in ipairs(STATS) do if s == k then known = true end end
+        if not known or not isint(v, 0, hi) then return "invalid_" .. key end
+      end
+    end
+  end
+  if fields.evs ~= nil then
+    local total = 0
+    for _, s in ipairs(STATS) do total = total + (fields.evs[s] or (rec and rec.evs[s]) or 0) end
+    if total > L.ev_total then return "ev_total" end
+  end
+  if fields.moves ~= nil then
+    local m = fields.moves
+    if type(m) ~= "table" or #m < 1 or #m > L.moves then return "invalid_moves" end
+    local seen = {}
+    for i = 1, #m do
+      if not isint(m[i], 1, L.move) or seen[m[i]] then return "invalid_moves" end
+      seen[m[i]] = true
+    end
+    for k in pairs(m) do
+      if math.type(k) ~= "integer" or k < 1 or k > #m then return "invalid_moves" end
+    end
+  end
+  if fields.pp ~= nil then
+    if type(fields.pp) ~= "table" then return "invalid_pp" end
+    for i = 1, L.moves do
+      local v = fields.pp[i]
+      if v ~= nil and not isint(v, 0, L.pp) then return "invalid_pp" end
+    end
+  end
+  return nil
+end
+
+-- Battle stats from base stats, IVs, EVs, level and nature (Bulbapedia "Stat"; integer division).
+function M.compute_stats(base, ivs, evs, level, nature)
+  local out = {}
+  for _, s in ipairs(STATS) do
+    local core = (2 * base[s] + ivs[s] + evs[s] // 4) * level // 100
+    if s == "hp" then
+      out.hp = core + level + 10
+    else
+      out[s] = core + 5
+    end
+  end
+  -- nature n: +stat n // 5, -stat n % 5 over atk def spe spa spd
+  local order = { "atk", "def", "spe", "spa", "spd" }
+  local up, down = order[nature // 5 + 1], order[nature % 5 + 1]
+  if up ~= down then
+    out[up] = out[up] * 11 // 10
+    out[down] = out[down] * 9 // 10
+  end
+  return out
+end
+
+local function patch(s, off, bytes) return s:sub(1, off) .. bytes .. s:sub(off + #bytes + 1) end
+
+-- Applies `fields` to the decrypted structure `plain` (checksum is NOT recomputed here).
+-- ctx (all optional): growth_rate(species) -> 0..5, base_stats(species, form) -> {hp,atk,def,spe,spa,spd},
+-- species_name(id) -> string, current_level (the level the structure shows now).
+-- Returns new_plain, warnings (list of strings) or nil, error.
+function M.apply(plain, fields, ctx)
+  ctx = ctx or {}
+  local rec = pk6.parse(plain)
+  if not rec then return nil, "bad_structure" end
+  local err = M.validate(fields, rec)
+  if err then return nil, err end
+  local warnings = {}
+  local function warn(w) warnings[#warnings + 1] = w end
+  local out = plain
+
+  local species = fields.species or rec.species
+  local species_changed = species ~= rec.species
+  local form = fields.form or (species_changed and 0 or rec.form)
+
+  -- species / form
+  if species_changed then out = patch(out, OFF.species, string.pack("<I2", species)) end
+  if species_changed or fields.form ~= nil then
+    local flags = out:byte(OFF.flags + 1)
+    out = patch(out, OFF.flags, string.char((flags & 0x07) | (form << 3)))
+  end
+  if species_changed then
+    warn("ability_unchanged")
+    if not rec.nicknamed and fields.nickname == nil and ctx.species_name then
+      local n = ctx.species_name(species)
+      if type(n) == "string" and n ~= "" and utf8.len(n) then
+        out = patch(out, OFF.nickname, pk6.utf8_to_utf16le(n, 13))
+      end
+    end
+  end
+
+  -- level -> EXP (rate of the final species)
+  local target_level = fields.level
+  if target_level == nil and species_changed then target_level = ctx.current_level end
+  local current_level = ctx.current_level
+  if target_level and (target_level ~= current_level or species_changed) then
+    local rate = ctx.growth_rate and ctx.growth_rate(species)
+    if rate then
+      out = patch(out, OFF.exp, string.pack("<I4", growth.exp_for_level(rate, target_level)))
+    elseif fields.level ~= nil and fields.level ~= current_level then
+      return nil, "growth_unavailable"
+    else
+      warn("exp_unchanged")
+    end
+  end
+
+  if fields.nature ~= nil then out = patch(out, OFF.nature, string.char(fields.nature)) end
+  if fields.ability ~= nil then out = patch(out, OFF.ability, string.char(fields.ability)) end
+  if fields.held_item ~= nil then out = patch(out, OFF.held_item, string.pack("<I2", fields.held_item)) end
+
+  if fields.nickname ~= nil then
+    out = patch(out, OFF.nickname, pk6.utf8_to_utf16le(fields.nickname, 13))
+    local iv32 = string.unpack("<I4", out, OFF.iv32 + 1)
+    iv32 = fields.nickname ~= "" and (iv32 | (1 << 31)) or (iv32 & ~(1 << 31) & 0xFFFFFFFF)
+    out = patch(out, OFF.iv32, string.pack("<I4", iv32))
+  end
+
+  if fields.evs then
+    local b = {}
+    for i, s in ipairs(STATS) do b[i] = string.char(fields.evs[s] or rec.evs[s]) end
+    out = patch(out, OFF.evs, table.concat(b))
+  end
+  if fields.ivs then
+    local iv32 = string.unpack("<I4", out, OFF.iv32 + 1)
+    for i, s in ipairs(STATS) do
+      if fields.ivs[s] ~= nil then
+        iv32 = (iv32 & ~(0x1F << (5 * (i - 1))) & 0xFFFFFFFF) | (fields.ivs[s] << (5 * (i - 1)))
+      end
+    end
+    out = patch(out, OFF.iv32, string.pack("<I4", iv32))
+  end
+
+  -- moves + PP
+  if fields.moves then
+    local old_ids, old_pp, old_up = {}, {}, {}
+    for i = 0, 3 do
+      old_ids[i + 1] = string.unpack("<I2", plain, OFF.moves + i * 2 + 1)
+      old_pp[i + 1] = plain:byte(OFF_PP + i + 1)
+      old_up[i + 1] = plain:byte(OFF_PPUPS + i + 1)
+    end
+    local ids, pps, ups = {}, {}, {}
+    local unknown_pp = false
+    for i = 1, 4 do
+      local id = fields.moves[i] or 0
+      ids[i] = string.pack("<I2", id)
+      if id == 0 then
+        pps[i], ups[i] = "\0", "\0"
+      elseif id == old_ids[i] and (fields.pp == nil or fields.pp[i] == nil) then
+        pps[i], ups[i] = string.char(old_pp[i]), string.char(old_up[i])
+      else
+        local pp = fields.pp and fields.pp[i]
+        if pp == nil then pp = M.DEFAULT_PP; unknown_pp = true end
+        pps[i] = string.char(pp)
+        ups[i] = (id == old_ids[i]) and string.char(old_up[i]) or "\0"
+      end
+    end
+    out = patch(out, OFF.moves, table.concat(ids))
+    out = patch(out, OFF_PP, table.concat(pps))
+    out = patch(out, OFF_PPUPS, table.concat(ups))
+    if unknown_pp then warn("pp_unknown") end
+  elseif fields.pp then
+    local pps = {}
+    for i = 1, 4 do
+      local id = string.unpack("<I2", out, OFF.moves + (i - 1) * 2 + 1)
+      local v = fields.pp[i]
+      pps[i] = string.char(v ~= nil and id ~= 0 and v or out:byte(OFF_PP + i))
+    end
+    out = patch(out, OFF_PP, table.concat(pps))
+  end
+
+  -- shiny: only the high PID half changes (gender, which uses the low byte, stays)
+  if fields.shiny ~= nil then
+    local tid, sid = string.unpack("<I2I2", out, OFF.tid + 1)
+    local pid = string.unpack("<I4", out, OFF.pid + 1)
+    local lo, hi = pid & 0xFFFF, pid >> 16
+    local is_shiny = (tid ~ sid ~ hi ~ lo) < 16
+    if fields.shiny and not is_shiny then
+      hi = tid ~ sid ~ lo ~ ((hi ~ lo) & 7) -- star shiny, xor 0..7 (keeps some variety of the old PID)
+    elseif not fields.shiny and is_shiny then
+      hi = tid ~ sid ~ lo ~ 0x10 -- xor 16: not shiny
+    end
+    out = patch(out, OFF.pid, string.pack("<I4", (hi << 16) | lo))
+  end
+
+  -- party extension (live level and stats), only for a 260 byte structure
+  if #out == pk6.SIZE_PARTY then
+    local new = pk6.parse(out)
+    local ext = rec.party_ext
+    local level = fields.level or ctx.current_level
+    local relevant = fields.level ~= nil or fields.species ~= nil or fields.form ~= nil or fields.nature ~= nil or
+      fields.ivs ~= nil or fields.evs ~= nil
+    if level and ext and relevant then
+      out = patch(out, OFF.level, string.char(level))
+      local base = ctx.base_stats and ctx.base_stats(new.species, new.form)
+      if base then
+        local st = M.compute_stats(base, new.ivs, new.evs, level, new.nature)
+        local hp = ext.hp or st.hp
+        if hp > st.hp or species_changed then hp = st.hp end
+        out = patch(out, OFF.hp, string.pack("<I2I2", hp, st.hp))
+        out = patch(out, OFF.stats, string.pack("<I2I2I2I2I2", st.atk, st.def, st.spe, st.spa, st.spd))
+      else
+        warn("stats_stale")
+      end
+    end
+  end
+  return out, warnings
 end
 
 return M
