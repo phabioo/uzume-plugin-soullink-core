@@ -287,6 +287,10 @@ function M.attach(ctx)
   local timeline = ctx.timeline or data.TIMELINE
   local obj = {}
 
+  -- The host calls the tick function only while a memory snapshot exists, and a snapshot exists only while some range
+  -- is registered. The demo reads no memory, so it registers one byte (no data is used) to keep its timeline running.
+  if type(fb.memory) == "table" and type(fb.memory.watch) == "function" then pcall(fb.memory.watch, "demo.clock", 0, 1) end
+
   local ticks = 0
   local next_step = 1
   local team = data.start_team()
@@ -547,7 +551,7 @@ M.TIMELINE = {
   { at = 20 * S, step = "catch" },                  -- the wild creature joins the team, battle ends
   { at = 30 * S, step = "move", zone = 103 },       -- -> Demo Route 2
   { at = 40 * S, step = "trainer_start", species = 23, level = 6 },
-  { at = 45 * S, step = "faint", slot = 2 },        -- team member 2 faints
+  { at = 45 * S, step = "faint", slot = 4 },        -- team member 4 (the caught creature) faints
   { at = 50 * S, step = "battle_end" },
   { at = 60 * S, step = "badge", index = 1 },       -- first badge
 }

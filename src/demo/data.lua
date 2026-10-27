@@ -54,7 +54,7 @@ M.TIMELINE = {
   { at = 20 * S, step = "catch" },                  -- the wild creature joins the team, battle ends
   { at = 30 * S, step = "move", zone = 103 },       -- -> Demo Route 2
   { at = 40 * S, step = "trainer_start", species = 23, level = 6 },
-  { at = 45 * S, step = "faint", slot = 2 },        -- team member 2 faints
+  { at = 45 * S, step = "faint", slot = 4 },        -- team member 4 (the caught creature) faints
   { at = 50 * S, step = "battle_end" },
   { at = 60 * S, step = "badge", index = 1 },       -- first badge
 }

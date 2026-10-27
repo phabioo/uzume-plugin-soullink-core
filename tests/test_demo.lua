@@ -22,6 +22,11 @@ local function names(mock)
   return out
 end
 
+t.case("demo registers one watch so the host keeps ticking (ticks need a memory snapshot)", function()
+  local mock = new_demo()
+  t.eq(mock.watches["demo.clock"], { addr = 0, len = 1 })
+end)
+
 t.case("demo start state: 3 synthetic creatures, a box, a town, no badge", function()
   local _, a = new_demo()
   local team = a:team()
@@ -61,7 +66,7 @@ t.case("demo timeline: zones, wild encounter, catch, faint, badge", function()
   t.eq(a:battle().kind, "trainer")
   t.eq(#a:encounters(), 1)
   run(a, 5 * S)
-  t.eq(a:team()[2].hp, 0)
+  t.eq(a:team()[4].hp, 0)  -- the creature caught in this run faints, so SoulLink has a death to record
   t.eq(a:team()[1].hp > 0, true)
   run(a, 5 * S)
   t.eq(a:battle().active, false)
