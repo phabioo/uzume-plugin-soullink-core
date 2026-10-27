@@ -49,7 +49,7 @@ jobs:
       - name: Package (fails when tag and manifest version differ)
         run: python3 -I tools/package.py --out dist --tag "$TAG"
       - name: Verify package
-        run: python3 -I tools/package.py --verify dist/*.fbplugin
+        run: python3 -I tools/package.py --verify dist/*.uzplugin
       - name: Build release notes from PR changelogs
         run: |
           base=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | grep -vxF "$TAG" | { cat; echo "$TAG"; } | sort -V | grep -xF -B1 "$TAG" | head -n1)
@@ -65,7 +65,7 @@ jobs:
         env:
           TAG_EXISTS: ${{ steps.tag.outputs.exists }}
         run: |
-          asset=$(ls dist/*.fbplugin)
+          asset=$(ls dist/*.uzplugin)
           if [ -s notes.md ]; then
             notes=(--notes-file notes.md)
           else
