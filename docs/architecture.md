@@ -51,7 +51,7 @@ Generic Pokémon record (adapters fill what they can, unknown fields are `nil`; 
 
 ## Events
 
-Emitted through `fb.events.emit` (the source is this plugin's id): `game.detected` `{ game_id, gen, supported }` once; `team.changed` `{ team }` when the serialized team changed (checked every 15th tick); `battle.started` `{ kind, horde, foes = { species... } }`; `battle.ended` `{ kind }`; `encounter` (the new `encounters()` entry); `location.changed` (the `location()` table, emitted when zone, location id or name changed).
+Emitted through `fb.events.emit` (the source is this plugin's id): `game.detected` `{ game_id, gen, supported }` once; `team.changed` `{ team }` when the serialized team changed (checked every 15th tick); `battle.started` `{ kind, horde, foes = { species... } }`; `battle.ended` `{ kind }`; `encounter` (the new `encounters()` entry); `location.changed` (the `location()` table, emitted when zone, location id or name changed); `badges.changed` `{ count, new = { badge numbers 1..8 } }` when the badge set changed (ORAS: checked every 15th tick; demo: on the badge step). The first snapshot after start is the baseline and emits nothing. Global event, so plugins without `requires` (for example Splits) can subscribe with `fb.events.on`.
 
 ## Adapter contract
 
@@ -76,7 +76,7 @@ An adapter module exports `attach(ctx)` with `ctx = { fb = fb, game = entry, det
 
 Game text (`gen6.text`), zones (`gen6.zones`), icon (`gen6.icons`) and map (`gen6.maps`) discovery are state machines advanced by `adapter:tick()` on different tick phases (and by one step on a `not_ready` call). One step is one archive read, one directory listing, a bounded batch of GARC entries (8 zone entries) or, for the map scan, as many units (directory, archive open, 16 entries) as fit a 25 ms `fb.clock` budget, one text file or one candidate validation, so no entry call comes near the 500 ms / 20M instruction budget. Game text is loaded when the game language is known (fallback EN after about 300 steps, reloaded once the real language is known), the archive is dropped after its files are extracted and decoded lines are cached in memory only. Zones are kept as derived numbers in memory. Only icon and map results are persisted in `fb.cache` (`icons/index.txt`, `map/index.txt`, `map/files.txt`, `map/progress.txt`, PNGs); game text and names are never written to the cache.
 
-State tracking in `tick()` (`gen6.oras`): revision detection (every 5th tick until found), `location.changed`, battle/encounter polling (`gen6.oras_battle`, every tick, reads only 232 bytes per opponent buffer until one changes) and the revision cross-check (every 30th tick until it had something to compare). All wrapped in `pcall`.
+State tracking in `tick()` (`gen6.oras`): revision detection (every 5th tick until found), `location.changed`, `badges.changed` (every 15th tick), battle/encounter polling (`gen6.oras_battle`, every tick, reads only 232 bytes per opponent buffer until one changes) and the revision cross-check (every 30th tick until it had something to compare). All wrapped in `pcall`.
 
 ## Open
 

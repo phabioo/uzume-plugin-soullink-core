@@ -267,6 +267,23 @@ t.case("trainer needs a readable MyStatus; implausible money and play time are l
   t.eq({ c:badges() }, { nil, "not_ready" })
 end)
 
+t.case("badges.changed: baseline emits nothing, a new badge emits count and new indexes", function()
+  local a, mock = world_make({ party = { { species = 25 } }, trainer = TRAINER, misc = { money = 1, badges = 0x01 } })
+  local function evs()
+    local out = {}
+    for _, e in ipairs(mock.events) do if e.name == "badges.changed" then out[#out + 1] = e.value end end
+    return out
+  end
+  ticks(a, 40)
+  t.eq(#evs(), 0, "first snapshot is the baseline")
+  mem.poke(mock.regions, V10.misc + 0xC, string.char(0x05))
+  ticks(a, 40)
+  t.eq(#evs(), 1)
+  t.eq(evs()[1].count, 2); t.eq(evs()[1].new, { 3 })
+  ticks(a, 40)
+  t.eq(#evs(), 1, "no repeat while unchanged")
+end)
+
 t.case("language falls back to the party heuristic without MyStatus", function()
   local a = world_make({ party = { { tid = 11, sid = 22, origin_game = 27, language_id = 5 } } })
   t.eq(a:language(), "de")

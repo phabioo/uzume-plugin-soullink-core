@@ -77,7 +77,10 @@ t.case("demo timeline: zones, wild encounter, catch, faint, badge", function()
   t.eq(a:badges().flags[2], false)
   t.eq(a:trainer().badges, 1)
   t.eq(names(mock), { "location.changed", "battle.started", "encounter", "battle.ended", "location.changed",
-    "battle.started", "battle.ended" })
+    "battle.started", "battle.ended", "badges.changed" })
+  local bev
+  for _, e in ipairs(mock.events) do if e.name == "badges.changed" then bev = e.value end end
+  t.eq(bev, { count = 1, new = { 1 } })
   run(a, 100 * S)
   t.eq(a:badges().count, 1)
   t.eq(#a:team(), 4)
