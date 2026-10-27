@@ -9,7 +9,7 @@ Build and test (needs `lua5.4`): `lua5.4 tools/bundle.lua` (writes `plugin/main.
 ## Releasing
 
 1. Bump `version` in `plugin/manifest.json` and merge.
-2. Release `vX.Y.Z` (must equal the manifest version), either by pushing the tag or by running "Release" in Actions on `main` with the tag as input; the latter creates the tag at that commit. The `Release` workflow runs the checks, builds the unsigned `uzume.soullink-core-X.Y.Z.fbplugin` (`python3 tools/package.py`) and attaches it to the GitHub release. Re-running with an existing tag replaces the asset. The release notes are collected from the `## Changelog` sections of the merged PRs since the previous tag (`tools/changelog.py`).
+2. Release `vX.Y.Z` (must equal the manifest version), either by pushing the tag or by running "Release" in Actions on `main` with the tag as input; the latter creates the tag at that commit. The `Release` workflow runs the checks, builds the unsigned `uzume.soullink-core-X.Y.Z.uzplugin` (`python3 tools/package.py`) and attaches it to the GitHub release. Re-running with an existing tag replaces the asset. The release notes are collected from the `## Changelog` sections of the merged PRs since the previous tag (`tools/changelog.py`).
 3. Run "Publish plugin" in phabioo/uzume with this repository and the tag; it downloads, signs and indexes the package.
 
 Requires Uzume 0.11 or later (plugin API v1). Part of [Uzume](https://github.com/phabioo/uzume); plugin interface: `docs/architecture/12-plugins.md` there. Plan: [docs/roadmap.md](docs/roadmap.md).

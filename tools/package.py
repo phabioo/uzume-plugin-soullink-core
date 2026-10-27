@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Packages plugin/ as an unsigned <manifest id>-<version>.fbplugin (zip).
+"""Packages plugin/ as an unsigned <manifest id>-<version>.uzplugin (zip).
 
 Usage (from repo root):
   python3 tools/package.py [--out DIR] [--tag vX.Y.Z]   build the package, print its path
@@ -56,7 +56,7 @@ def build(out_dir, tag):
         fail("tag %s does not match manifest version %s" % (tag, m["version"]))
     files = collect(PLUGIN_DIR)
     os.makedirs(out_dir, exist_ok=True)
-    out = os.path.join(out_dir, "%s-%s.fbplugin" % (m["id"], m["version"]))
+    out = os.path.join(out_dir, "%s-%s.uzplugin" % (m["id"], m["version"]))
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for name, full in files:
             zi = zipfile.ZipInfo(name, FIXED_TIME)
@@ -96,7 +96,9 @@ def verify(path):
         entry = m.get("entry")
         if not isinstance(entry, str) or entry not in names:
             fail("entry file missing: %r" % (entry,))
-        expect = "%s-%s.fbplugin" % (m["id"], m["version"])
+        # .fbplugin is accepted as legacy input only; builds always write .uzplugin
+        ext = ".fbplugin" if path.endswith(".fbplugin") else ".uzplugin"
+        expect = "%s-%s%s" % (m["id"], m["version"], ext)
         if os.path.basename(path) != expect:
             fail("file name should be " + expect)
         if names != sorted(names):
