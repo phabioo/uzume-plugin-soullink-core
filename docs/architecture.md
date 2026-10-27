@@ -61,6 +61,10 @@ An adapter module exports `attach(ctx)` with `ctx = { fb = fb, game = entry, det
 
 `main.lua`: unknown game logs `not_pokemon` and returns. Known game without adapter logs `no_adapter` and still provides the interface (`supported = false`). With an adapter: provide, emit `game.detected` once, every tick call the adapter's optional `tick()` (bounded background work and state tracking), then every 15th tick call `team()` and emit `team.changed` when its deterministic serialization (`core.serialize`) changed. All user-visible strings go through `fb.i18n.t` (`plugin/i18n/en.json` source, `de.json`); the v0.3 additions have no new UI strings (log lines are developer diagnostics in English).
 
+## Demo adapter
+
+`demo.adapter` (with `demo.data`) implements the adapter contract on synthetic data and a tick-driven timeline (steps in `demo.data.TIMELINE`); it reads no memory. `main.lua` uses it instead of the game adapter only when `fb.store.get("dev.demo_data") == true` (permission `store`; a missing store counts as off). `info().demo` is true, `revision` is `"demo"`, `icon_rev` is `"demo-1"`, `game.detected` carries `demo`. Names come from `demo.data.name` and always start with "Demo"/"Demomon".
+
 ## Adding a game
 
 1. Add the entry to `core.games` (`GAMES`) and, for 3DS/NDS, the code to `plugin/manifest.json`.

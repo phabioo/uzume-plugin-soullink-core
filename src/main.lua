@@ -12,8 +12,19 @@ if not entry then
   return
 end
 
+-- Developer setting "Demo data": plugin store key `dev.demo_data` = true (set it with the MCP tool store_put).
+-- Off by default and never switched on by the plugin itself.
+local DEMO_KEY = "dev.demo_data"
+local function demo_enabled()
+  if type(fb.store) ~= "table" or type(fb.store.get) ~= "function" then return false end
+  local ok, value = pcall(fb.store.get, DEMO_KEY)
+  return ok and value == true
+end
+
 local adapter
-local adapter_mod = adapters.get(entry.adapter)
+local demo = demo_enabled()
+local adapter_mod = adapters.get(demo and "demo.adapter" or entry.adapter)
+if demo then fb.log.info(fb.i18n.t("demo_on")) end
 if adapter_mod then
   local ok, result = pcall(adapter_mod.attach, { fb = fb, game = entry, detected = detected })
   if ok and type(result) == "table" then
@@ -30,7 +41,7 @@ local api = interface.new(entry, detected, adapter)
 fb.provide("pokemon.core", api)
 
 if adapter then
-  fb.events.emit("game.detected", { game_id = entry.id, gen = entry.gen, supported = true })
+  fb.events.emit("game.detected", { game_id = entry.id, gen = entry.gen, supported = true, demo = demo })
 
   local ticks, last = 0, nil
   fb.on_tick(function()
