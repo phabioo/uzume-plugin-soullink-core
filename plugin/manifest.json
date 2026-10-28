@@ -1,7 +1,7 @@
 {
   "id": "uzume.soullink-core",
   "name": "SoulLink Core",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "issues_url": "https://github.com/phabioo/uzume-plugin-soullink-core",
   "api": 1,
   "type": "script",

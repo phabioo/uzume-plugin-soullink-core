@@ -138,12 +138,12 @@ __mod["core.interface"] = function(...)
 -- Builds the table for uz.provide("pokemon.core", tbl).
 local M = {}
 
-local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "trainer", "name",
+local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "balls", "trainer", "name",
   "species_info", "areas", "locations", "zone_info", "icon", "icon_variants", "map_candidates", "map_image", "map_selected", "diagnostics",
   "encode_pokemon", "encode_money", "encode_item", "edit_limits", "names_list" }
 local FEATURE = {
   team = "team", box = "box", location = "location",
-  battle = "battle", encounters = "encounters", badges = "badges", trainer = "trainer", name = "names",
+  battle = "battle", encounters = "encounters", badges = "badges", balls = "balls", trainer = "trainer", name = "names",
   areas = "areas", locations = "locations", icon = "icons", map_candidates = "map", diagnostics = "diagnostics",
   encode_pokemon = "edit_pokemon", encode_money = "edit_money", encode_item = "edit_items", names_list = "name_lists",
 }
@@ -1281,7 +1281,7 @@ M.INDEX_REV = "3"                   -- cache format revision; other revisions ar
 -- must equal the manifest version (tests/test_maps.lua checks it). Both are part of the cache key of the
 -- index and of every PNG, so a plugin update never reuses an older scan result: it rescans.
 M.MAP_SCAN_REV = "m2"
-M.PLUGIN_VERSION = "0.6.3"
+M.PLUGIN_VERSION = "0.6.4"
 M.CACHE_REV = M.INDEX_REV .. "-" .. M.MAP_SCAN_REV .. "-" .. M.PLUGIN_VERSION
 M.MAX_ENTRIES_PER_FILE = 5000
 M.MAX_LZ_INPUT = 8 * 1024 * 1024
@@ -1765,6 +1765,13 @@ local MS_TID, MS_VERSION, MS_LANGUAGE, MS_OT = 0, 4, 0x2D, 0x48
 -- Misc block offsets (PKHeX Misc6AO)
 local MISC_MONEY, MISC_BADGES = 8, 0xC
 
+-- Items pouch: Poke Ball item ids (PKHeX Legal ball items, recalled, not re-fetched): 1..16 (Master
+-- to Cherish), 492..500 (Fast to Park), 576 (Dream). Sanity limits: PKHeX max item id 775, count 999.
+M.BALL_IDS = { [576] = true }
+for i = 1, 16 do M.BALL_IDS[i] = true end
+for i = 492, 500 do M.BALL_IDS[i] = true end
+M.MAX_ITEM_ID, M.MAX_ITEM_COUNT = 775, 999
+
 -- Sanity of decrypted party stats (garbage decrypts almost never pass; an all-zero area decrypts to
 -- garbage): level 1..100, 0 < max HP, HP <= max HP, every battle stat plausible.
 function M.live_sane(x)
@@ -2183,6 +2190,29 @@ function M.attach(ctx)
     return { count = popcount(b), flags = flags }
   end
 
+  -- Poke Ball count in the Items pouch (400 slots of u16 id, u16 count, packed from slot 0).
+  function obj:balls()
+    if not detect() then return nil, "not_ready" end
+    local bag = A("bag")
+    if not bag then return nil, "unsupported" end
+    local raw = uz.memory.bytes(bag, addr.BAG_SLOTS * 4)
+    if not raw or #raw < addr.BAG_SLOTS * 4 then return nil, "not_ready" end
+    local valid, invalid, balls = 0, 0, 0
+    for i = 0, addr.BAG_SLOTS - 1 do
+      local id, ct = string.unpack("<I2I2", raw, i * 4 + 1)
+      if id == 0 then break end -- the pouch is packed, the first empty slot ends it
+      if id > M.MAX_ITEM_ID or ct == 0 or ct > M.MAX_ITEM_COUNT then
+        invalid = invalid + 1
+      else
+        valid = valid + 1
+        if M.BALL_IDS[id] then balls = balls + ct end
+      end
+    end
+    -- Mostly implausible slots: wrong address or stale memory, better no answer than a wrong number.
+    if invalid > 0 and invalid >= valid then return nil, "unsupported" end
+    return { count = balls }
+  end
+
   -- Event flag n (0..0xCFF) of the save, or nil. Not part of the interface yet.
   function obj:event_flag(n)
     if not detect() then return nil end
@@ -2345,6 +2375,7 @@ M.PARTY_SLOTS = 6
 M.BOX_COUNT, M.BOX_SLOTS, M.BOX_SIZE = 31, 30, 232
 M.MON_STRIDE, M.MON_SLOTS = 0x244, 8
 M.FLAG_BATTLE = 0x00040001
+M.BAG_SLOTS = 400 -- Items pouch (Poke Balls live here)
 
 -- key -> watched length in bytes
 M.LENGTHS = {
@@ -2352,6 +2383,7 @@ M.LENGTHS = {
   box = M.BOX_COUNT * M.BOX_SLOTS * M.BOX_SIZE,
   mystatus = 0x70,   -- TID +0, SID +2, version +4, language +0x2D, OT name +0x48 (0x1A bytes)
   misc = 0x10,       -- money u32 +8, badges u8 bitfield +0xC
+  bag = 0x640,       -- Items pouch: 400 slots x (u16 item id, u16 count)
   play_time = 4,     -- u16 hours, u8 minutes, u8 seconds
   map_id = 4,        -- u16 zone id, u16 facing
   player_x = 4,      -- f32
@@ -2375,13 +2407,13 @@ M.REVISIONS = {
     name = "v1.0",
     addr = {
       party = 0x08CF727C, box = 0x08C9A144,
-      mystatus = 0x08C7D350, misc = 0x08C6DDC8, play_time = 0x08CF7D98,
+      mystatus = 0x08C7D350, misc = 0x08C6DDC8, bag = 0x08C6AC80, play_time = 0x08CF7D98,
       map_id = 0x08C6A894, player_x = 0x08C6A8A4, player_y = 0x08C6A8AC, event_flags = 0x08C7DDDC,
       battle_wild_foes = 0x08805638, battle_trainer_foes = 0x08804AF4,
       battle_wild_mons = 0x082041F4, battle_trainer_mons = 0x08205D04,
     },
     state = {
-      party = "M", box = "M", misc = "M", mystatus = "D", play_time = "D", map_id = "D", player_x = "D",
+      party = "M", box = "M", misc = "M", bag = "M", mystatus = "D", play_time = "D", map_id = "D", player_x = "D",
       player_y = "D", event_flags = "D", battle_wild_foes = "U", battle_trainer_foes = "U",
       battle_wild_mons = "U", battle_trainer_mons = "U",
     },
@@ -2390,12 +2422,12 @@ M.REVISIONS = {
     name = "v1.4",
     addr = {
       party = 0x08CFB26C, box = 0x08C9E134,
-      mystatus = 0x08C81340, misc = 0x08C71DB8, play_time = 0x08CFBD88,
+      mystatus = 0x08C81340, misc = 0x08C71DB8, bag = 0x08C6EC70, play_time = 0x08CFBD88,
       map_id = 0x08C6E884, player_x = 0x08C6E894, player_y = 0x08C6E89C, event_flags = 0x08C81DCC,
       battle_flag = 0x081FB478, battle_wild_foes = 0x081FFA6C,
     },
     state = {
-      party = "C", box = "C", misc = "C", mystatus = "C", play_time = "C", map_id = "C", player_x = "C",
+      party = "C", box = "C", misc = "C", bag = "D", mystatus = "C", play_time = "C", map_id = "C", player_x = "C",
       player_y = "C", event_flags = "C", battle_flag = "C", battle_wild_foes = "C",
     },
   },

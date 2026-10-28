@@ -42,6 +42,13 @@ local MS_TID, MS_VERSION, MS_LANGUAGE, MS_OT = 0, 4, 0x2D, 0x48
 -- Misc block offsets (PKHeX Misc6AO)
 local MISC_MONEY, MISC_BADGES = 8, 0xC
 
+-- Items pouch: Poke Ball item ids (PKHeX Legal ball items, recalled, not re-fetched): 1..16 (Master
+-- to Cherish), 492..500 (Fast to Park), 576 (Dream). Sanity limits: PKHeX max item id 775, count 999.
+M.BALL_IDS = { [576] = true }
+for i = 1, 16 do M.BALL_IDS[i] = true end
+for i = 492, 500 do M.BALL_IDS[i] = true end
+M.MAX_ITEM_ID, M.MAX_ITEM_COUNT = 775, 999
+
 -- Sanity of decrypted party stats (garbage decrypts almost never pass; an all-zero area decrypts to
 -- garbage): level 1..100, 0 < max HP, HP <= max HP, every battle stat plausible.
 function M.live_sane(x)
@@ -458,6 +465,29 @@ function M.attach(ctx)
     local flags = {}
     for i = 1, 8 do flags[i] = (b >> (i - 1)) & 1 == 1 end
     return { count = popcount(b), flags = flags }
+  end
+
+  -- Poke Ball count in the Items pouch (400 slots of u16 id, u16 count, packed from slot 0).
+  function obj:balls()
+    if not detect() then return nil, "not_ready" end
+    local bag = A("bag")
+    if not bag then return nil, "unsupported" end
+    local raw = uz.memory.bytes(bag, addr.BAG_SLOTS * 4)
+    if not raw or #raw < addr.BAG_SLOTS * 4 then return nil, "not_ready" end
+    local valid, invalid, balls = 0, 0, 0
+    for i = 0, addr.BAG_SLOTS - 1 do
+      local id, ct = string.unpack("<I2I2", raw, i * 4 + 1)
+      if id == 0 then break end -- the pouch is packed, the first empty slot ends it
+      if id > M.MAX_ITEM_ID or ct == 0 or ct > M.MAX_ITEM_COUNT then
+        invalid = invalid + 1
+      else
+        valid = valid + 1
+        if M.BALL_IDS[id] then balls = balls + ct end
+      end
+    end
+    -- Mostly implausible slots: wrong address or stale memory, better no answer than a wrong number.
+    if invalid > 0 and invalid >= valid then return nil, "unsupported" end
+    return { count = balls }
   end
 
   -- Event flag n (0..0xCFF) of the save, or nil. Not part of the interface yet.

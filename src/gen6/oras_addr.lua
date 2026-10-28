@@ -16,6 +16,7 @@ M.PARTY_SLOTS = 6
 M.BOX_COUNT, M.BOX_SLOTS, M.BOX_SIZE = 31, 30, 232
 M.MON_STRIDE, M.MON_SLOTS = 0x244, 8
 M.FLAG_BATTLE = 0x00040001
+M.BAG_SLOTS = 400 -- Items pouch (Poke Balls live here)
 
 -- key -> watched length in bytes
 M.LENGTHS = {
@@ -23,6 +24,7 @@ M.LENGTHS = {
   box = M.BOX_COUNT * M.BOX_SLOTS * M.BOX_SIZE,
   mystatus = 0x70,   -- TID +0, SID +2, version +4, language +0x2D, OT name +0x48 (0x1A bytes)
   misc = 0x10,       -- money u32 +8, badges u8 bitfield +0xC
+  bag = 0x640,       -- Items pouch: 400 slots x (u16 item id, u16 count)
   play_time = 4,     -- u16 hours, u8 minutes, u8 seconds
   map_id = 4,        -- u16 zone id, u16 facing
   player_x = 4,      -- f32
@@ -46,13 +48,13 @@ M.REVISIONS = {
     name = "v1.0",
     addr = {
       party = 0x08CF727C, box = 0x08C9A144,
-      mystatus = 0x08C7D350, misc = 0x08C6DDC8, play_time = 0x08CF7D98,
+      mystatus = 0x08C7D350, misc = 0x08C6DDC8, bag = 0x08C6AC80, play_time = 0x08CF7D98,
       map_id = 0x08C6A894, player_x = 0x08C6A8A4, player_y = 0x08C6A8AC, event_flags = 0x08C7DDDC,
       battle_wild_foes = 0x08805638, battle_trainer_foes = 0x08804AF4,
       battle_wild_mons = 0x082041F4, battle_trainer_mons = 0x08205D04,
     },
     state = {
-      party = "M", box = "M", misc = "M", mystatus = "D", play_time = "D", map_id = "D", player_x = "D",
+      party = "M", box = "M", misc = "M", bag = "M", mystatus = "D", play_time = "D", map_id = "D", player_x = "D",
       player_y = "D", event_flags = "D", battle_wild_foes = "U", battle_trainer_foes = "U",
       battle_wild_mons = "U", battle_trainer_mons = "U",
     },
@@ -61,12 +63,12 @@ M.REVISIONS = {
     name = "v1.4",
     addr = {
       party = 0x08CFB26C, box = 0x08C9E134,
-      mystatus = 0x08C81340, misc = 0x08C71DB8, play_time = 0x08CFBD88,
+      mystatus = 0x08C81340, misc = 0x08C71DB8, bag = 0x08C6EC70, play_time = 0x08CFBD88,
       map_id = 0x08C6E884, player_x = 0x08C6E894, player_y = 0x08C6E89C, event_flags = 0x08C81DCC,
       battle_flag = 0x081FB478, battle_wild_foes = 0x081FFA6C,
     },
     state = {
-      party = "C", box = "C", misc = "C", mystatus = "C", play_time = "C", map_id = "C", player_x = "C",
+      party = "C", box = "C", misc = "C", bag = "D", mystatus = "C", play_time = "C", map_id = "C", player_x = "C",
       player_y = "C", event_flags = "C", battle_flag = "C", battle_wild_foes = "C",
     },
   },

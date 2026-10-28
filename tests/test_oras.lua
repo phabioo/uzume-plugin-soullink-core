@@ -267,6 +267,58 @@ t.case("trainer needs a readable MyStatus; implausible money and play time are l
   t.eq({ c:badges() }, { nil, "not_ready" })
 end)
 
+t.case("balls(): sums every ball type in the Items pouch, ignores other items (v1.0 and v1.4)", function()
+  for _, rev in ipairs({ "v1.0", "v1.4" }) do
+    local a = world_make({ rev = rev, party = { { species = 25 } },
+      bag = { { 17, 5 }, { 4, 10 }, { 3, 4 }, { 13, 2 }, { 576, 1 }, { 492, 3 }, { 500, 1 }, { 25, 99 }, { 16, 1 } } })
+    t.eq(a:balls(), { count = 22 }, rev)
+  end
+end)
+
+t.case("balls(): no balls and an empty pouch give 0", function()
+  local a = world_make({ party = { { species = 25 } }, bag = { { 17, 5 }, { 18, 2 } } })
+  t.eq(a:balls(), { count = 0 })
+  local b = world_make({ party = { { species = 25 } }, bag = {} })
+  t.eq(b:balls(), { count = 0 })
+  -- a ball behind the first empty slot is not read
+  local c = world_make({ party = { { species = 25 } }, bag = { { 17, 1 }, { 0, 0 }, { 4, 9 } } })
+  t.eq(c:balls(), { count = 0 })
+end)
+
+t.case("balls(): implausible slots are skipped, garbage is unsupported", function()
+  local ok = world_make({ party = { { species = 25 } }, bag = { { 4, 3 }, { 900, 5 }, { 3, 2 }, { 2, 1000 }, { 1, 1 } } })
+  t.eq(ok:balls(), { count = 6 }) -- 3 valid, 2 invalid
+  local junk = world_make({ party = { { species = 25 } }, bag = { { 900, 5 }, { 4, 2000 }, { 60000, 1 } } })
+  t.eq({ junk:balls() }, { nil, "unsupported" })
+  local noise = {}
+  for i = 1, 400 do noise[i] = string.pack("<I2I2", 0xFFFF - i, 0xABCD) end
+  local n = world_make({ party = { { species = 25 } }, bag = table.concat(noise) })
+  t.eq({ n:balls() }, { nil, "unsupported" })
+end)
+
+t.case("balls(): not_ready before the revision is found or while the pouch is unreadable", function()
+  local a = world_make({ trainer = TRAINER })
+  t.eq({ a:balls() }, { nil, "not_ready" })
+  local b = world_make({ party = { { species = 25 } } }) -- party found, no bag memory mapped
+  t.eq({ b:balls() }, { nil, "not_ready" })
+end)
+
+t.case("balls(): a revision without a bag address is unsupported, the bag override fills it", function()
+  local rev = addr.REVISIONS[1]
+  local saved = rev.addr.bag
+  rev.addr.bag = nil
+  local a = world_make({ party = { { species = 25 } } })
+  t.eq({ a:balls() }, { nil, "unsupported" })
+  local extra = { { addr = 0x08123450, data = mem.bag_blob({ { 4, 7 } }) } }
+  local b = world_make({ party = { { species = 25 } }, extra = extra },
+    { cache = { ["config/addresses.txt"] = "bag=0x08123450" } })
+  t.eq(b:balls(), { count = 7 })
+  rev.addr.bag = saved
+  local c = world_make({ party = { { species = 25 } }, bag = { { 4, 2 } }, extra = extra },
+    { cache = { ["config/addresses.txt"] = "v1.0.bag=0x08123450" } })
+  t.eq(c:balls(), { count = 7 })
+end)
+
 t.case("badges.changed: baseline emits nothing, a new badge emits count and new indexes", function()
   local a, mock = world_make({ party = { { species = 25 } }, trainer = TRAINER, misc = { money = 1, badges = 0x01 } })
   local function evs()
@@ -340,7 +392,7 @@ t.case("address overrides: generic, per revision, bad lines, zone_addr.txt", fun
 end)
 
 t.case("every address key has a length and the v1.4 save range is v1.0 + 0x3FF0", function()
-  for _, key in ipairs({ "party", "box", "mystatus", "misc", "play_time", "map_id", "player_x", "player_y", "event_flags" }) do
+  for _, key in ipairs({ "party", "box", "mystatus", "misc", "bag", "play_time", "map_id", "player_x", "player_y", "event_flags" }) do
     t.eq(V14[key] - V10[key], addr.SHIFT, key)
   end
   for _, key in ipairs(addr.KEYS) do t.ok(addr.LENGTHS[key] > 0) end
