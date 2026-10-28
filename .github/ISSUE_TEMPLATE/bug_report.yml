@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in this plugin does not work as it should
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Only file a bug here if you think this plugin does something wrong. Bugs in the Uzume app or server belong in [phabioo/uzume](https://github.com/phabioo/uzume/issues).
+        **Public issue:** never post host names, IP addresses, invite codes, user names or paths with your name. Never attach ROMs, BIOS, firmware, keys, save files or dumps of commercial games.
+  - type: checkboxes
+    attributes:
+      label: Is there an existing issue for this?
+      description: Search the open and closed issues first. When Uzume showed a fingerprint, search for it.
+      options:
+        - label: I have searched the existing issues
+          required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings › Plugins in the Uzume app.
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: "0.20.42"
+    validations:
+      required: true
+  - type: input
+    id: server-version
+    attributes:
+      label: Server version
+  - type: input
+    id: fingerprint
+    attributes:
+      label: Fingerprint
+      description: Filled in by "Report on GitHub" in Uzume. Leave empty when you file the issue by hand.
+  - type: textarea
+    id: issue-desc
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction-steps
+    attributes:
+      label: Steps to reproduce
+      description: Which system, game version and language, and what you did.
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Logs
+      description: |
+        The plugin console log is part of "Collect logs…" in the Uzume app (Settings › Help & diagnostics), under `logs/plugins/`.
+        The bundle keeps host names and IP addresses on purpose. Remove them before you attach it here.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: The issue and its attachments contain no host names, IP addresses, invite codes or personal paths
+          required: true

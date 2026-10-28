@@ -2,6 +2,7 @@
   "id": "uzume.soullink-core",
   "name": "SoulLink Core",
   "version": "0.6.2",
+  "issues_url": "https://github.com/phabioo/uzume-plugin-soullink-core",
   "api": 1,
   "type": "script",
   "provides": ["pokemon.core"],
