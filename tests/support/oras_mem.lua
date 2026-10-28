@@ -48,6 +48,15 @@ function M.mystatus(t)
   return s .. string.rep("\0", 0x70 - #s)
 end
 
+-- Items pouch: list of { id, count } (packed from slot 0), padded to 400 slots; a string is used as is.
+function M.bag_blob(list)
+  if type(list) == "string" then return list end
+  local parts = {}
+  for i, s in ipairs(list) do parts[i] = string.pack("<I2I2", s[1], s[2]) end
+  local b = table.concat(parts)
+  return b .. string.rep("\0", addr.BAG_SLOTS * 4 - #b)
+end
+
 -- Opponent/own mons array: list of { species, max_hp, hp, level } at array positions 1..8 (nil = empty).
 function M.mons_blob(list)
   local parts = {}
@@ -84,6 +93,7 @@ function M.world(o)
     mem[#mem + 1] = { addr = rv.misc, data = string.rep("\0", 8) .. string.pack("<I4I1", o.misc.money or 0, o.misc.badges or 0)
       .. string.rep("\0", 3) }
   end
+  if o.bag then mem[#mem + 1] = { addr = rv.bag, data = M.bag_blob(o.bag) } end
   if o.zone then mem[#mem + 1] = { addr = rv.map_id, data = string.pack("<I2I2", o.zone, o.facing or 0) } end
   if o.x then mem[#mem + 1] = { addr = rv.player_x, data = string.pack("<f", o.x) } end
   if o.y then mem[#mem + 1] = { addr = rv.player_y, data = string.pack("<f", o.y) } end

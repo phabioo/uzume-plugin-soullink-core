@@ -1,12 +1,12 @@
 -- Builds the table for uz.provide("pokemon.core", tbl).
 local M = {}
 
-local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "trainer", "name",
+local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "balls", "trainer", "name",
   "species_info", "areas", "locations", "zone_info", "icon", "icon_variants", "map_candidates", "map_image", "map_selected", "diagnostics",
   "encode_pokemon", "encode_money", "encode_item", "edit_limits", "names_list" }
 local FEATURE = {
   team = "team", box = "box", location = "location",
-  battle = "battle", encounters = "encounters", badges = "badges", trainer = "trainer", name = "names",
+  battle = "battle", encounters = "encounters", badges = "badges", balls = "balls", trainer = "trainer", name = "names",
   areas = "areas", locations = "locations", icon = "icons", map_candidates = "map", diagnostics = "diagnostics",
   encode_pokemon = "edit_pokemon", encode_money = "edit_money", encode_item = "edit_items", names_list = "name_lists",
 }
