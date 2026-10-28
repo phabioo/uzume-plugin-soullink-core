@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local crypto = require("pk6_crypto")
 local build = require("pk6_build")
 local mem = require("oras_mem")
@@ -31,9 +31,9 @@ local function setup(rev, flag)
     m[#m + 1] = { addr = rv.battle_wild_mons, data = ZERO_MONS }
     m[#m + 1] = { addr = rv.battle_trainer_mons, data = ZERO_MONS }
   end
-  local mock = fb_mock.new({ game = { system = "3ds" }, memory = m, codec = { pk6_decrypt = crypto.decrypt },
+  local mock = uz_mock.new({ game = { system = "3ds" }, memory = m, codec = { pk6_decrypt = crypto.decrypt },
     i18n_dir = "plugin/i18n", frame = 77 })
-  local a = oras.attach({ fb = mock.fb, game = {}, detected = {} })
+  local a = oras.attach({ uz = mock.uz, game = {}, detected = {} })
   a:revision()
   return a, mock, rv
 end
@@ -214,9 +214,9 @@ t.case("battle addresses can be overridden", function()
   local m = mem.world({ party = { OWN }, zone = 5, x = 1.0, y = 2.0 })
   m[#m + 1] = { addr = 0x08700000, data = ZERO_FOES }
   m[#m + 1] = { addr = 0x08710000, data = ZERO_MONS }
-  local mock = fb_mock.new({ memory = m, codec = { pk6_decrypt = crypto.decrypt }, i18n_dir = "plugin/i18n",
+  local mock = uz_mock.new({ memory = m, codec = { pk6_decrypt = crypto.decrypt }, i18n_dir = "plugin/i18n",
     cache = { ["config/addresses.txt"] = "v1.0.battle_wild_foes=0x08700000\nv1.0.battle_wild_mons=0x08710000\n" } })
-  local a = oras.attach({ fb = mock.fb })
+  local a = oras.attach({ uz = mock.uz })
   a:revision()
   t.eq(mock.watches["oras.v1.0.battle_wild_foes"].addr, 0x08700000)
   ticks(a, 2)
@@ -227,7 +227,7 @@ t.case("battle addresses can be overridden", function()
 end)
 
 t.case("battle() and encounters() before detection and without addresses", function()
-  local a = oras.attach({ fb = fb_mock.new({ codec = { pk6_decrypt = crypto.decrypt }, i18n_dir = "plugin/i18n" }).fb })
+  local a = oras.attach({ uz = uz_mock.new({ codec = { pk6_decrypt = crypto.decrypt }, i18n_dir = "plugin/i18n" }).uz })
   t.eq({ a:battle() }, { nil, "not_ready" })
   t.eq({ a:encounters() }, { nil, "not_ready" })
   ticks(a, 10) -- tracking must not raise without memory
@@ -261,9 +261,9 @@ t.case("v0.3.1: the encounter record and event carry the species name once the t
   for i = 0, 29 do names[#names + 1] = "Sp" .. i end
   local gt = tb.garc({ [98] = tb.build(names), [14] = tb.build({ "a", "b" }) })
   local c = formats.fake_codec(); c.pk6_decrypt = crypto.decrypt
-  local mock = fb_mock.new({ game = { system = "3ds" }, memory = m, codec = c, i18n_dir = "plugin/i18n", frame = 77,
+  local mock = uz_mock.new({ game = { system = "3ds" }, memory = m, codec = c, i18n_dir = "plugin/i18n", frame = 77,
     romfs = { ["/a/0/7/3"] = gt } })
-  local a = oras.attach({ fb = mock.fb, game = {}, detected = {} })
+  local a = oras.attach({ uz = mock.uz, game = {}, detected = {} })
   ticks(a, 200)
   t.eq(a:name("species", 19), "Sp19")
   wild_foe_slots(rv, mock, { foe(19, 0x0A0A0A0A, 7, 20) })

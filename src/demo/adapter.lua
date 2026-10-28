@@ -21,8 +21,8 @@ local function find_location(zone)
 end
 
 -- Synthetic square icon: a colour derived from the species id, a darker frame. nil when no PNG encoder exists.
-local function make_icon(fb, species)
-  if type(fb.codec) ~= "table" or type(fb.codec.png) ~= "function" then return nil end
+local function make_icon(uz, species)
+  if type(uz.codec) ~= "table" or type(uz.codec.png) ~= "function" then return nil end
   local w, h = 32, 32
   local r, g, b = (species * 53) % 200 + 40, (species * 97) % 200 + 40, (species * 29) % 200 + 40
   local px = {}
@@ -36,19 +36,19 @@ local function make_icon(fb, species)
       end
     end
   end
-  local ok, png = pcall(fb.codec.png, { width = w, height = h, rgba = table.concat(px) })
+  local ok, png = pcall(uz.codec.png, { width = w, height = h, rgba = table.concat(px) })
   if ok and type(png) == "string" then return png end
   return nil
 end
 
 function M.attach(ctx)
-  local fb = ctx.fb
+  local uz = ctx.uz
   local timeline = ctx.timeline or data.TIMELINE
   local obj = {}
 
   -- The host calls the tick function only while a memory snapshot exists, and a snapshot exists only while some range
   -- is registered. The demo reads no memory, so it registers one byte (no data is used) to keep its timeline running.
-  if type(fb.memory) == "table" and type(fb.memory.watch) == "function" then pcall(fb.memory.watch, "demo.clock", 0, 1) end
+  if type(uz.memory) == "table" and type(uz.memory.watch) == "function" then pcall(uz.memory.watch, "demo.clock", 0, 1) end
 
   local ticks = 0
   local next_step = 1
@@ -74,7 +74,7 @@ function M.attach(ctx)
   end
 
   local function emit_location()
-    fb.events.emit("location.changed", loc_table())
+    uz.events.emit("location.changed", loc_table())
   end
 
   local function start_battle(kind, species, level)
@@ -85,21 +85,21 @@ function M.attach(ctx)
       battle.own[#battle.own + 1] = { personality = m.personality, species = m.species, hp = m.hp,
         max_hp = m.max_hp, slot = i }
     end
-    fb.events.emit("battle.started", { kind = kind, horde = false, foes = { species } })
+    uz.events.emit("battle.started", { kind = kind, horde = false, foes = { species } })
     if kind == "wild" then
       seq = seq + 1
       local l = find_location(zone)
       local e = { seq = seq, species = species, form = 0, level = level, shiny = false, horde = false,
         zone = zone, location = l and l.id or nil, frame = ticks }
       encounters[#encounters + 1] = e
-      fb.events.emit("encounter", with_names(e))
+      uz.events.emit("encounter", with_names(e))
     end
   end
 
   local function end_battle()
     local kind = battle.kind
     battle = { active = false }
-    if kind then fb.events.emit("battle.ended", { kind = kind }) end
+    if kind then uz.events.emit("battle.ended", { kind = kind }) end
   end
 
   local handlers = {}
@@ -125,7 +125,7 @@ function M.attach(ctx)
     if badges ~= old then
       local new = {}
       for i = old + 1, badges do new[#new + 1] = i end
-      fb.events.emit("badges.changed", { count = badges, new = new })
+      uz.events.emit("badges.changed", { count = badges, new = new })
     end
   end
 
@@ -148,7 +148,7 @@ function M.attach(ctx)
   function obj:ticks() return ticks end
 
   function obj:features()
-    return { icons = type(fb.codec) == "table" and type(fb.codec.png) == "function", names = true, areas = true,
+    return { icons = type(uz.codec) == "table" and type(uz.codec.png) == "function", names = true, areas = true,
       locations = true, live_stats = true, location = true, battle = true, encounters = true }
   end
 
@@ -246,7 +246,7 @@ function M.attach(ctx)
   function obj:icon(species, form)
     if math.type(species) ~= "integer" or species < 1 then return nil, "unknown_species" end
     local key = species
-    if icons[key] == nil then icons[key] = make_icon(fb, species) or false end
+    if icons[key] == nil then icons[key] = make_icon(uz, species) or false end
     if not icons[key] then return nil, "unsupported" end
     return icons[key]
   end

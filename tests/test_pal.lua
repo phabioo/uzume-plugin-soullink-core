@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local pal_build = require("pal_build")
 local crypto = require("pk6_crypto")
@@ -95,8 +95,8 @@ local function make(romfs, codec_over)
   codec.pk6_decrypt = crypto.decrypt
   codec.bclim = bclim_stub
   for k, v in pairs(codec_over or {}) do codec[k] = v end
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = romfs })
-  local a = oras.attach({ fb = mock.fb, game = { id = "pokemon_omega_ruby" }, detected = {} })
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = romfs })
+  local a = oras.attach({ uz = mock.uz, game = { id = "pokemon_omega_ruby" }, detected = {} })
   return a, mock
 end
 
@@ -144,7 +144,7 @@ t.case("icon_variants: plain images (no palette data) are unsupported", function
   t.eq({ a:icon_variants(25) }, { nil, "unsupported" })
 end)
 
-t.case("icon(): palette data uses the default variant in Lua, not fb.codec.bclim", function()
+t.case("icon(): palette data uses the default variant in Lua, not uz.codec.bclim", function()
   local called = 0
   local a = make(palette_world(), { bclim = function(s) called = called + 1; return bclim_stub(s) end })
   t.ok(found(a))
@@ -212,8 +212,8 @@ t.case("icon cache key carries the decoder revision", function()
   t.ok(found(a))
   a:icon(25, 0)
   t.eq(icons.CACHE_REV, "r3-o1")
-  t.ok(mock.fb.cache.read("icons/25-0-" .. icons.CACHE_REV .. ".png"))
-  t.eq(mock.fb.cache.read("icons/25-0.png"), nil)
+  t.ok(mock.uz.cache.read("icons/25-0-" .. icons.CACHE_REV .. ".png"))
+  t.eq(mock.uz.cache.read("icons/25-0.png"), nil)
 end)
 
 t.case("diagnostics: palette facts of the probed icon entries", function()
@@ -260,8 +260,8 @@ end
 local function mapstore(world, codec_over, cache)
   local codec = formats.fake_codec()
   for k, v in pairs(codec_over or {}) do codec[k] = v end
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = world, cache = cache })
-  return maps.new(mock.fb, "pokemon_omega_ruby", function() return "v1.0" end), mock
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = world, cache = cache })
+  return maps.new(mock.uz, "pokemon_omega_ruby", function() return "v1.0" end), mock
 end
 
 local function run_scan(store, limit)
@@ -320,8 +320,8 @@ t.case("map scan: a throwing entry and a throwing archive are skipped, the scan 
       return base.garc(d)
     end,
   })
-  local orig = mock.fb.rom.romfs
-  mock.fb.rom.romfs = function(p) if p == "/a/1/0/1" then error("boom read") end return orig(p) end
+  local orig = mock.uz.rom.romfs
+  mock.uz.rom.romfs = function(p) if p == "/a/1/0/1" then error("boom read") end return orig(p) end
   t.ok(run_scan(store), "finished")
   t.eq(store.state(), "done")
   t.eq(#store.candidates(), 3, "the maps after the throwing entry are still found")
@@ -335,7 +335,7 @@ t.case("map scan: time limit ends in failed with a reason and keeps the partial 
   local world = mapworld()
   local store, mock = mapstore(world)
   local now = 0
-  mock.fb.clock = function() now = now + 1000; return now end
+  mock.uz.clock = function() now = now + 1000; return now end
   local saved = maps.MAX_SCAN_MS
   maps.MAX_SCAN_MS = 20000
   local n = run_scan(store)
@@ -353,10 +353,10 @@ end)
 t.case("map scan: a step stops at the time budget", function()
   local store, mock = mapstore(mapworld())
   local now = 0
-  mock.fb.clock = function() now = now + 100; return now end -- every clock call costs 100 ms
+  mock.uz.clock = function() now = now + 100; return now end -- every clock call costs 100 ms
   local reads = 0
-  local orig = mock.fb.rom.romfs
-  mock.fb.rom.romfs = function(p) reads = reads + 1; return orig(p) end
+  local orig = mock.uz.rom.romfs
+  mock.uz.rom.romfs = function(p) reads = reads + 1; return orig(p) end
   store.step()
   store.step()
   t.ok(store.diagnostics().map_steps == 2)
@@ -377,8 +377,8 @@ end)
 t.case("map scan: adapter ticks alone finish the scan", function()
   local codec = formats.fake_codec()
   codec.pk6_decrypt = crypto.decrypt
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = mapworld() })
-  local a = oras.attach({ fb = mock.fb, game = { id = "pokemon_omega_ruby" }, detected = {} })
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = mapworld() })
+  local a = oras.attach({ uz = mock.uz, game = { id = "pokemon_omega_ruby" }, detected = {} })
   local ticks = 0
   while not a:features().map and ticks < 20000 do a:tick(); ticks = ticks + 1 end
   t.ok(a:features().map, "map feature after " .. ticks .. " ticks")

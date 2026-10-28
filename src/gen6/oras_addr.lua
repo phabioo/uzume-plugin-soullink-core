@@ -119,10 +119,10 @@ function M.parse_overrides(text)
 end
 
 -- Reads both override files from the plugin cache. config/zone_addr.txt sets map_id for all revisions.
-function M.load_overrides(fb)
+function M.load_overrides(uz)
   local function read(name)
-    if fb.cache and fb.cache.read then
-      local ok, v = pcall(fb.cache.read, name)
+    if uz.cache and uz.cache.read then
+      local ok, v = pcall(uz.cache.read, name)
       if ok and type(v) == "string" then return v end
     end
   end

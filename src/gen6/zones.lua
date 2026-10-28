@@ -122,11 +122,11 @@ end
 -- env.names_state() -> state of the game text store (optional): while it is neither "done" nor
 -- "unsupported", areas() and locations() answer "not_ready", so a list is never handed out (and cached
 -- by a consumer) without names that are only a few steps away.
-function M.new(fb, env)
+function M.new(uz, env)
   env = env or {}
   local self = {}
-  local codec = fb.codec
-  local can = fb.rom and fb.rom.romfs and codec and codec.garc and codec.garc_file and true or false
+  local codec = uz.codec
+  local can = uz.rom and uz.rom.romfs and codec and codec.garc and codec.garc_file and true or false
   local state = can and "idle" or "unsupported" -- idle | scan | done | failed (retrying) | unsupported
   local data, count, nextidx = nil, 0, 1
   local zos, table_data = {}, nil
@@ -137,7 +137,7 @@ function M.new(fb, env)
   local diag = { zo_packs = 0, with_enc = 0, table_zones = 0, how = "none" }
 
   local function log(level, msg)
-    if fb.log and fb.log[level] then fb.log[level](msg) end
+    if uz.log and uz.log[level] then uz.log[level](msg) end
   end
 
   local function note_reason(r)
@@ -161,7 +161,7 @@ function M.new(fb, env)
 
   local function open()
     open_tries = open_tries + 1
-    local d = fb.rom.romfs(M.GARC_PATH)
+    local d = uz.rom.romfs(M.GARC_PATH)
     if type(d) ~= "string" then
       if open_tries >= M.OPEN_RETRIES then
         fail("archive_missing", "encounter data not found at " .. M.GARC_PATH)

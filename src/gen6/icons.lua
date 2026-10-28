@@ -1,6 +1,6 @@
 -- Box icons of Gen 6 games, read at runtime from the player's own RomFS and
--- converted to PNG with fb.codec.bclim + fb.codec.png. Nothing is shipped; the
--- PNGs are derived data in the plugin cache (fb.cache), never in the repository.
+-- converted to PNG with uz.codec.bclim + uz.codec.png. Nothing is shipped; the
+-- PNGs are derived data in the plugin cache (uz.cache), never in the repository.
 --
 -- The icon GARC is not hardcoded: it is discovered by walking the RomFS and
 -- validated by content (see docs/games/omega-ruby-alpha-sapphire.md, "Icons").
@@ -25,7 +25,7 @@ M.MAX_SPECIES = 721
 M.EXPORT_ENTRIES = { 0, 1, 25, 201, 255, 258, 261 } -- 0-based GARC entries of the one-time debug export
 M.EXPORT_RAW = { 1, 255 }        -- entries that are also exported undecompressed
 M.EXPORT_MAX_BINS = 12           -- cap of exported .bin files
-M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (fb.clock)
+M.EXPORT_BUDGET_MS = 25          -- wall-clock budget of one export step (uz.clock)
 M.CACHE_REV = "r3-o1"  -- part of the PNG cache key: bump when decoding or the entry mapping changes (r3 = variant D palette decoder, o1 = measured icon order)
 M.REV = M.CACHE_REV    -- icon decoder revision exposed as info().icon_rev so consumers can key their own caches
 M.PROBE_PATH = "/a/0/9/1"   -- Project Pokemon ORAS file system: "971 box sprites" (diagnostics probe only)
@@ -38,11 +38,11 @@ local function first_line(s)
   return nil
 end
 
-function M.new(fb, personal)
+function M.new(uz, personal)
   local self = {}
-  local codec = fb.codec
-  local can = fb.rom and fb.rom.romfs and fb.rom.romfs_list and codec and codec.garc
-    and codec.garc_file and codec.bclim and codec.png and fb.cache and true or false
+  local codec = uz.codec
+  local can = uz.rom and uz.rom.romfs and uz.rom.romfs_list and codec and codec.garc
+    and codec.garc_file and codec.bclim and codec.png and uz.cache and true or false
 
   local state = can and "idle" or "unsupported" -- idle | scan | done | failed | unsupported
   local data, path, icon_count
@@ -50,7 +50,7 @@ function M.new(fb, personal)
   local exp_status = "pending" -- diagnostics key icon_export
 
   local function read_cache(name)
-    local ok, v = pcall(fb.cache.read, name)
+    local ok, v = pcall(uz.cache.read, name)
     if ok and type(v) == "string" then return v end
     return nil
   end
@@ -78,13 +78,13 @@ function M.new(fb, personal)
   end
 
   local function try_path(p)
-    local d = fb.rom.romfs(p)
+    local d = uz.rom.romfs(p)
     if type(d) ~= "string" or not validate(d) then return false end
     data, path, state = d, p, "done"
     local okc, gg = pcall(codec.garc, d)
     icon_count = okc and type(gg) == "table" and gg.count or nil
-    pcall(fb.cache.write, M.INDEX_FILE, p .. "\n")
-    if fb.log and fb.log.info then fb.log.info("icon archive accepted at " .. p) end
+    pcall(uz.cache.write, M.INDEX_FILE, p .. "\n")
+    if uz.log and uz.log.info then uz.log.info("icon archive accepted at " .. p) end
     return true
   end
 
@@ -101,7 +101,7 @@ function M.new(fb, personal)
   end
 
   local function scan_dir(dir)
-    local list = fb.rom.romfs_list(dir)
+    local list = uz.rom.romfs_list(dir)
     if type(list) ~= "table" then return end
     for _, e in ipairs(list) do
       local full = dir .. "/" .. tostring(e.name)
@@ -126,7 +126,7 @@ function M.new(fb, personal)
       scan_dir(table.remove(dirs, 1))
     else
       state = "failed"
-      if fb.log and fb.log.warn then fb.log.warn("no box icon archive found in the RomFS") end
+      if uz.log and uz.log.warn then uz.log.warn("no box icon archive found in the RomFS") end
     end
   end
 
@@ -135,7 +135,7 @@ function M.new(fb, personal)
     local ok, err = pcall(advance)
     if not ok then
       state = "failed"
-      if fb.log and fb.log.error then fb.log.error("icon discovery failed: " .. tostring(err)) end
+      if uz.log and uz.log.error then uz.log.error("icon discovery failed: " .. tostring(err)) end
     end
   end
 
@@ -179,7 +179,7 @@ function M.new(fb, personal)
     if not can then return out end
     local d = data
     if not d then
-      local okr, r = pcall(fb.rom.romfs, M.PROBE_PATH)
+      local okr, r = pcall(uz.rom.romfs, M.PROBE_PATH)
       d = okr and type(r) == "string" and r or nil
       out.icons_path = M.PROBE_PATH .. (d and "" or " (unreadable)")
     end
@@ -212,7 +212,7 @@ function M.new(fb, personal)
   -- the decoder gets) go to the plugin's own cache as diag/icon-<entry0>.bin, plus diag/icon-index.txt.
   -- Local to the player's PC, never logged. Runs one time-budgeted step per call once discovery is done.
   local exp = { state = "idle", queue = nil, lines = {}, files = 0, bins = 0, g = nil, err = nil }
-  local function exp_clock() local ok, v = pcall(fb.clock or function() end); return ok and v or nil end
+  local function exp_clock() local ok, v = pcall(uz.clock or function() end); return ok and v or nil end
 
   local function exp_fail(why)
     exp.state = "failed"
@@ -220,7 +220,7 @@ function M.new(fb, personal)
   end
 
   local function exp_write(name, bytes)
-    local ok, r = pcall(fb.cache.write, name, bytes)
+    local ok, r = pcall(uz.cache.write, name, bytes)
     if not ok or r == false then return false end
     exp.files = exp.files + 1
     return true
@@ -364,7 +364,7 @@ function M.new(fb, personal)
 
   -- PNG string, or nil, "not_ready" | "unsupported" | "unknown_species".
   -- Palette / plain 16-bit data of the Gen 6 icons is decoded in Lua (gen6.pal_bclim, default
-  -- variant pal_bclim.DEFAULT_VARIANT); every other BCLIM goes through fb.codec.bclim.
+  -- variant pal_bclim.DEFAULT_VARIANT); every other BCLIM goes through uz.codec.bclim.
   function self.icon(species, form)
     local ok, f = valid_args(species, form)
     if not ok then return nil, "unknown_species" end
@@ -380,7 +380,7 @@ function M.new(fb, personal)
     if type(img) ~= "table" then return nil, "unknown_species" end
     local png = codec.png(img)
     if type(png) ~= "string" then return nil, "unknown_species" end
-    if exact then pcall(fb.cache.write, key, png) end
+    if exact then pcall(uz.cache.write, key, png) end
     return png
   end
 

@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local demo = require("demo.adapter")
 local data = require("demo.data")
 
@@ -10,9 +10,9 @@ local function png_codec()
 end
 
 local function new_demo(opts)
-  local mock = fb_mock.new(opts or { game = { system = "3ds", code = "000400000011C400" } })
-  mock.fb.codec = png_codec()
-  local a = demo.attach({ fb = mock.fb, game = {}, detected = {} })
+  local mock = uz_mock.new(opts or { game = { system = "3ds", code = "000400000011C400" } })
+  mock.uz.codec = png_codec()
+  local a = demo.attach({ uz = mock.uz, game = {}, detected = {} })
   return mock, a
 end
 local function run(a, ticks) for _ = 1, ticks do a:tick() end end
@@ -104,9 +104,9 @@ t.case("demo icons: synthetic PNG, nothing without an encoder", function()
   local mock, a = new_demo()
   t.ok(a:icon(21, 0):find("^PNG:32x32:"))
   t.eq(a:features().icons, true)
-  mock.fb.codec = {}
+  mock.uz.codec = {}
   local _, b = new_demo()
-  b = demo.attach({ fb = mock.fb, game = {}, detected = {} })
+  b = demo.attach({ uz = mock.uz, game = {}, detected = {} })
   local v, err = b:icon(21, 0)
   t.eq(v, nil); t.eq(err, "unsupported")
   t.eq(b:features().icons, false)
@@ -114,12 +114,12 @@ end)
 
 -- Entry module: the developer setting decides, never the plugin.
 local function run_main(store)
-  local mock = fb_mock.new({ game = { system = "3ds", code = "000400000011C400" } })
-  mock.fb.codec = png_codec()
+  local mock = uz_mock.new({ game = { system = "3ds", code = "000400000011C400" } })
+  mock.uz.codec = png_codec()
   if store then
-    mock.fb.store = { get = function(key) return store[key], store[key] ~= nil and 1 or 0 end }
+    mock.uz.store = { get = function(key) return store[key], store[key] ~= nil and 1 or 0 end }
   end
-  _G.fb = mock.fb
+  _G.uz = mock.uz
   local ok, err = pcall(dofile, "src/main.lua")
   assert(ok, err)
   return mock
@@ -141,5 +141,5 @@ t.case("main: demo only with the setting on", function()
   t.eq(detected.demo, true)
   on.tick(10 * S)
   t.eq(on.provided["pokemon.core"].location().name, "Demo Route 1")
-  _G.fb = nil
+  _G.uz = nil
 end)

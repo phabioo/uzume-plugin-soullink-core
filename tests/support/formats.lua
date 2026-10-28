@@ -1,6 +1,6 @@
 -- Synthetic builders and a fake codec for documented container formats.
 -- Test-only: the fake decoder reads linear RGBA8888 BCLIM (format 9) and a fake PNG;
--- the real tiling/format decoding is the host's fb.codec job.
+-- the real tiling/format decoding is the host's uz.codec job.
 local M = {}
 local pack, unpack = string.pack, string.unpack
 

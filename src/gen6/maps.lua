@@ -1,9 +1,9 @@
 -- Region map discovery: finds large BCLIM images in the player's own RomFS at
 -- runtime (plain files, GARC entries, LZ10/LZ11-wrapped entries, DARC archives)
 -- and converts a chosen one to PNG. No image is shipped; the index and PNGs are
--- derived data in the plugin cache (fb.cache). Scanning is a resumable state
+-- derived data in the plugin cache (uz.cache). Scanning is a resumable state
 -- machine. One unit = one directory listing, one archive open, or a bounded batch of entries;
--- one step() runs units until a wall-clock budget (STEP_BUDGET_MS, fb.clock) is used up, so no
+-- one step() runs units until a wall-clock budget (STEP_BUDGET_MS, uz.clock) is used up, so no
 -- entry call nears the 500 ms / 20M instruction budget. The scan always ends in `done` (a list,
 -- possibly empty) or `failed` (with a reason): a throwing entry or archive is skipped and counted
 -- (never retried), and MAX_SCAN_MS bounds the whole scan.
@@ -18,8 +18,8 @@ M.MIN_FILE_SIZE = 64
 M.MIN_W, M.MIN_H = 256, 128         -- candidate threshold (decoded size = BCLIM header size)
 M.ENTRIES_PER_STEP = 16             -- entries per unit
 M.STEP_BUDGET_MS = 25               -- wall-clock budget of one step() (units run until it is used)
-M.MAX_UNITS_PER_STEP = 200          -- hard cap when fb.clock is missing or stands still
-M.MAX_SCAN_MS = 30 * 60 * 1000      -- scan time limit (fb.clock): then `failed` with the partial list
+M.MAX_UNITS_PER_STEP = 200          -- hard cap when uz.clock is missing or stands still
+M.MAX_SCAN_MS = 30 * 60 * 1000      -- scan time limit (uz.clock): then `failed` with the partial list
 -- Entries whose decoded size is below this cannot hold a candidate (4-bit texture of MIN_W x MIN_H
 -- plus the footer): they are skipped without decompressing (LZ header) or decoding.
 M.MIN_DECODED = (256 * 128) // 2 + 40
@@ -95,16 +95,16 @@ end
 -- Short, log-safe text.
 local function short(v) return (tostring(v):gsub("[^%w _%.:#/%-]", "?"):sub(1, 60)) end
 
-function M.new(fb, game_id, revision_fn)
+function M.new(uz, game_id, revision_fn)
   local self = {}
-  local codec = fb.codec
+  local codec = uz.codec
   local missing
-  if not (fb.rom and fb.rom.romfs) then missing = "fb.rom.romfs"
-  elseif not fb.rom.romfs_list then missing = "fb.rom.romfs_list"
-  elseif not codec then missing = "fb.codec"
+  if not (uz.rom and uz.rom.romfs) then missing = "uz.rom.romfs"
+  elseif not uz.rom.romfs_list then missing = "uz.rom.romfs_list"
+  elseif not codec then missing = "uz.codec"
   elseif not codec.png then missing = "codec.png"
   elseif not codec.bclim then missing = "codec.bclim"
-  elseif not fb.cache then missing = "fb.cache" end
+  elseif not uz.cache then missing = "uz.cache" end
   -- idle | dirs | files | done | failed | unsupported
   local state = missing and "unsupported" or "idle"
   local dirs, files, fidx, cands, cur = {}, {}, 0, {}, nil
@@ -114,16 +114,16 @@ function M.new(fb, game_id, revision_fn)
 
   local function reject(why) if not first_reject then first_reject = short(why) end end
   local function clock()
-    if type(fb.clock) ~= "function" then return nil end
-    local ok, v = pcall(fb.clock)
+    if type(uz.clock) ~= "function" then return nil end
+    local ok, v = pcall(uz.clock)
     if ok and type(v) == "number" then return v end
   end
 
   local function cread(name)
-    local ok, v = pcall(fb.cache.read, name)
+    local ok, v = pcall(uz.cache.read, name)
     if ok and type(v) == "string" then return v end
   end
-  local function cwrite(name, data) pcall(fb.cache.write, name, data) end
+  local function cwrite(name, data) pcall(uz.cache.write, name, data) end
 
   local function save_index(complete)
     local lines = { (complete and "complete " or "partial ") .. M.INDEX_REV }
@@ -222,7 +222,7 @@ function M.new(fb, game_id, revision_fn)
   end
 
   local function open_file(path)
-    local d = fb.rom.romfs(path)
+    local d = uz.rom.romfs(path)
     if type(d) ~= "string" then reject("romfs_unreadable " .. path); return nil end
     local okg, g = false, nil
     if codec.garc and codec.garc_file then okg, g = pcall(codec.garc, d) end
@@ -256,7 +256,7 @@ function M.new(fb, game_id, revision_fn)
   end
 
   local function scan_dir(dir)
-    local list = fb.rom.romfs_list(dir)
+    local list = uz.rom.romfs_list(dir)
     if type(list) ~= "table" then reject("list_failed " .. dir); return end
     for _, e in ipairs(list) do
       local full = dir .. "/" .. tostring(e.name)
@@ -277,13 +277,13 @@ function M.new(fb, game_id, revision_fn)
     state = "done"
     cur = nil
     save_index(true)
-    if fb.log and fb.log.info then fb.log.info("map scan finished, " .. #cands .. " candidates") end
+    if uz.log and uz.log.info then uz.log.info("map scan finished, " .. #cands .. " candidates") end
   end
 
   local function fail(why)
     state, cur, fail_reason = "failed", nil, short(why)
     save_index(false)
-    if fb.log and fb.log.error then fb.log.error("map scan failed: " .. tostring(why)) end
+    if uz.log and uz.log.error then uz.log.error("map scan failed: " .. tostring(why)) end
   end
 
   -- One unit of work.
@@ -335,7 +335,7 @@ function M.new(fb, game_id, revision_fn)
 
   local function terminal() return state == "done" or state == "failed" or state == "unsupported" end
 
-  -- One bounded scan step: units until STEP_BUDGET_MS (fb.clock) is used. Never raises.
+  -- One bounded scan step: units until STEP_BUDGET_MS (uz.clock) is used. Never raises.
   function self.step()
     if terminal() then return end
     stat.steps = stat.steps + 1
@@ -417,7 +417,7 @@ function M.new(fb, game_id, revision_fn)
     local known = false
     for _, c in ipairs(cands) do if c.id == id then known = true; break end end
     if not known then return nil, "unknown_map" end
-    local d = fb.rom.romfs(path)
+    local d = uz.rom.romfs(path)
     if type(d) ~= "string" then return nil, "unknown_map" end
     local e = d
     local okg, g = false, nil

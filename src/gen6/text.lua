@@ -121,11 +121,11 @@ end
 -- Store: finds the gametext GARC for the game language and loads the name files in bounded steps
 -- (one archive read or one file per step). Decoded lines are kept in memory only.
 -- opts.language_fn() -> language code or nil.
-function M.new(fb, opts)
+function M.new(uz, opts)
   opts = opts or {}
   local self = {}
-  local codec = fb.codec
-  local can = fb.rom and fb.rom.romfs and codec and codec.garc and codec.garc_file and true or false
+  local codec = uz.codec
+  local can = uz.rom and uz.rom.romfs and codec and codec.garc and codec.garc_file and true or false
   local state = can and "idle" or "unsupported" -- idle | open | fetch | search | done | unsupported
   local files, lines = {}, {}
   local cands, cand, data, kinds_left, garc_count, search_list, search_pos
@@ -160,15 +160,15 @@ function M.new(fb, opts)
       rounds = rounds + 1
       if rounds > M.MAX_RETRIES then
         state = "unsupported"
-        if fb.log and fb.log.warn then fb.log.warn("no readable game text archive found; giving up") end
+        if uz.log and uz.log.warn then uz.log.warn("no readable game text archive found; giving up") end
       else
         cand, pause = 0, M.RETRY_EVERY
-        if rounds == 1 and fb.log and fb.log.warn then fb.log.warn("no readable game text archive found; retrying") end
+        if rounds == 1 and uz.log and uz.log.warn then uz.log.warn("no readable game text archive found; retrying") end
       end
       return
     end
     local idx = cands[cand]
-    local d = fb.rom.romfs(M.GARC_DIR .. (M.GARC_BASE + idx))
+    local d = uz.rom.romfs(M.GARC_DIR .. (M.GARC_BASE + idx))
     if type(d) ~= "string" then reject("romfs_unreadable"); return end
     local ok, g, gerr = pcall(codec.garc, d)
     if not ok or type(g) ~= "table" or type(g.count) ~= "number" then
@@ -193,10 +193,10 @@ function M.new(fb, opts)
     end
     data = nil
     state = "done"
-    if fb.log and fb.log.info then
+    if uz.log and uz.log.info then
       local parts = {}
       for _, k in ipairs(M.KIND_ORDER) do parts[#parts + 1] = k .. "=" .. (files[k] and files[k].count or 0) end
-      fb.log.info("game text loaded, language index " .. tostring(cands.current) .. ", lines: " ..
+      uz.log.info("game text loaded, language index " .. tostring(cands.current) .. ", lines: " ..
         table.concat(parts, " ") .. (found_species_file and (", species list found at file " .. found_species_file) or ""))
     end
   end
@@ -272,7 +272,7 @@ function M.new(fb, opts)
     local ok, err = pcall(advance)
     if not ok then
       state = "unsupported"
-      if fb.log and fb.log.error then fb.log.error("game text failed: " .. tostring(err)) end
+      if uz.log and uz.log.error then uz.log.error("game text failed: " .. tostring(err)) end
     end
   end
 

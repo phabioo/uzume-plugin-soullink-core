@@ -57,7 +57,7 @@ M.GAMES = {
 -- Region letter (4th char of an NDS/GBA game code) -> language
 local LANG = { D = "de", F = "fr", I = "it", S = "es", E = "en", P = "en", J = "ja", K = "ko" }
 
--- Returns entry, info for an fb.game-like table; nil for unknown games.
+-- Returns entry, info for an uz.game-like table; nil for unknown games.
 function M.detect(game)
   if type(game) ~= "table" or type(game.system) ~= "string" or type(game.code) ~= "string" then
     return nil

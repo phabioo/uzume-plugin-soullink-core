@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local tb = require("text_build")
 local text = require("gen6.text")
@@ -67,11 +67,11 @@ end
 
 local function make(romfs, lang)
   local reads = {}
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = romfs })
-  local ro = mock.fb.rom.romfs
-  mock.fb.rom.romfs = function(p) reads[#reads + 1] = p; return ro(p) end
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = romfs })
+  local ro = mock.uz.rom.romfs
+  mock.uz.rom.romfs = function(p) reads[#reads + 1] = p; return ro(p) end
   local cur = { lang = lang }
-  local store = text.new(mock.fb, { language_fn = function() return cur.lang end })
+  local store = text.new(mock.uz, { language_fn = function() return cur.lang end })
   return store, mock, reads, cur
 end
 
@@ -135,8 +135,8 @@ t.case("no archive: unsupported; no codec: unsupported", function()
   for _ = 1, 2000 do store.step() end
   t.eq(store.state(), "unsupported")
   t.eq({ store.name("species", 1) }, { nil, "unsupported" })
-  local mock = fb_mock.new({ i18n_dir = "plugin/i18n" })
-  t.eq(text.new(mock.fb, {}).state(), "unsupported")
+  local mock = uz_mock.new({ i18n_dir = "plugin/i18n" })
+  t.eq(text.new(mock.uz, {}).state(), "unsupported")
 end)
 
 t.case("waits for the language, falls back after a while and reloads when it becomes known", function()
@@ -210,7 +210,7 @@ t.case("v0.3.2: a text archive that is not mounted yet is retried, not final", f
   local gt = tb.garc({ [98] = tb.build(lines("Sp", 30)), [14] = tb.build(lines("Mv", 10)) })
   local mounted = false
   local store, mock = make({}, "de")
-  mock.fb.rom.romfs = function() if mounted then return gt end return nil end
+  mock.uz.rom.romfs = function() if mounted then return gt end return nil end
   for _ = 1, 60 do store.step() end
   t.eq(store.state(), "open")
   mounted = true

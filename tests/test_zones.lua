@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local zones = require("gen6.zones")
 
@@ -66,13 +66,13 @@ local function world(opts)
 end
 
 local function make(romfs, names)
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = romfs })
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = romfs })
   local reads, fileCalls = 0, 0
-  local ro, gf = mock.fb.rom.romfs, mock.fb.codec.garc_file
-  mock.fb.rom.romfs = function(p) reads = reads + 1; return ro(p) end
-  local store = zones.new(mock.fb, { name = function(kind, id) return names and names[id] end })
+  local ro, gf = mock.uz.rom.romfs, mock.uz.codec.garc_file
+  mock.uz.rom.romfs = function(p) reads = reads + 1; return ro(p) end
+  local store = zones.new(mock.uz, { name = function(kind, id) return names and names[id] end })
   local peak = 0
-  mock.fb.codec.garc_file = function(...) fileCalls = fileCalls + 1; return gf(...) end
+  mock.uz.codec.garc_file = function(...) fileCalls = fileCalls + 1; return gf(...) end
   local function run()
     for _ = 1, 100 do
       if store.state() == "done" or store.state() == "unsupported" then return end
@@ -163,8 +163,8 @@ t.case("missing or broken archives never raise", function()
   t.eq(junk.state(), "done")
   t.eq(junk.found(), false)
   t.eq(junk.areas(), {})
-  local mock = fb_mock.new({ i18n_dir = "plugin/i18n" })
-  t.eq(zones.new(mock.fb, {}).state(), "unsupported")
+  local mock = uz_mock.new({ i18n_dir = "plugin/i18n" })
+  t.eq(zones.new(mock.uz, {}).state(), "unsupported")
 end)
 
 -- v0.3.1 ---------------------------------------------------------------------------------------------
@@ -257,16 +257,16 @@ end)
 t.case("the archive is retried when it is not readable yet; a failing entry does not stop the scan", function()
   local good = world2()["/a/0/1/3"]
   local calls = 0
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
-  mock.fb.rom.romfs = function() calls = calls + 1; if calls <= 3 then return nil end return good end
-  local gf = mock.fb.codec.garc_file
-  mock.fb.codec.garc_file = function(d, i, sub) if i == 2 then error("boom") end return gf(d, i, sub) end
-  local store = zones.new(mock.fb, {})
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
+  mock.uz.rom.romfs = function() calls = calls + 1; if calls <= 3 then return nil end return good end
+  local gf = mock.uz.codec.garc_file
+  mock.uz.codec.garc_file = function(d, i, sub) if i == 2 then error("boom") end return gf(d, i, sub) end
+  local store = zones.new(mock.uz, {})
   for _ = 1, 100 do store.step() end
   t.eq(store.state(), "done")
   t.eq(#store.areas() >= 1, true)
-  local mock2 = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
-  local s2 = zones.new(mock2.fb, {})
+  local mock2 = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
+  local s2 = zones.new(mock2.uz, {})
   for _ = 1, zones.OPEN_RETRIES + 1 do s2.step() end
   t.eq(s2.state(), "failed")
 end)
@@ -274,8 +274,8 @@ end)
 -- v0.3.2
 t.case("v0.3.2: no list is handed out while the game text is still loading", function()
   local text_state = "open"
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = world2() })
-  local store = zones.new(mock.fb, { name = function(_, id) return "N" .. id end, names_state = function() return text_state end })
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = world2() })
+  local store = zones.new(mock.uz, { name = function(_, id) return "N" .. id end, names_state = function() return text_state end })
   for _ = 1, 100 do store.step() end
   t.eq(store.state(), "done")
   t.eq({ store.locations() }, { nil, "not_ready" })
@@ -289,9 +289,9 @@ end)
 t.case("v0.3.2: an archive that becomes readable late is still scanned (no final unsupported)", function()
   local good = world2()["/a/0/1/3"]
   local steps = 0
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
-  mock.fb.rom.romfs = function() if steps < 60 then return nil end return good end
-  local store = zones.new(mock.fb, {})
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = {} })
+  mock.uz.rom.romfs = function() if steps < 60 then return nil end return good end
+  local store = zones.new(mock.uz, {})
   while steps < 400 and store.state() ~= "done" do steps = steps + 1; store.step() end
   t.eq(store.state(), "done"); t.eq(#store.locations(), 5)
   t.ok(store.diagnostics().zone_retries >= 1)
@@ -299,10 +299,10 @@ end)
 
 t.case("v0.3.2: an unreadable GARC and a failing scan are retried, not final", function()
   local good = world2()["/a/0/1/3"]
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = { ["/a/0/1/3"] = good } })
-  local garc, broken = mock.fb.codec.garc, true
-  mock.fb.codec.garc = function(d) if broken then error("not yet") end return garc(d) end
-  local store = zones.new(mock.fb, {})
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n", romfs = { ["/a/0/1/3"] = good } })
+  local garc, broken = mock.uz.codec.garc, true
+  mock.uz.codec.garc = function(d) if broken then error("not yet") end return garc(d) end
+  local store = zones.new(mock.uz, {})
   store.step()
   t.eq(store.state(), "failed"); t.eq(store.diagnostics().first_rejection, "archive_unreadable")
   t.eq({ store.locations() }, { nil, "failed" })
