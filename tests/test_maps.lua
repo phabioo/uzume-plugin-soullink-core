@@ -82,7 +82,7 @@ t.case("scan finds plain, LZ11, DARC and loose candidates sorted by area", funct
   t.eq(ids, { "/a/0/0/0#3", "/a/0/0/1#1", "/a/0/0/0#4/timg/map.bclim", "/a/0/0/0#1" })
   t.eq(list[1], { id = "/a/0/0/0#3", w = 512, h = 256 })
   t.eq(store.found(), true)
-  t.eq(mock.cache_files["map/index.txt"]:match("^[^\n]+"), "complete " .. maps.INDEX_REV)
+  t.eq(mock.cache_files["map/index.txt"]:match("^[^\n]+"), "complete " .. maps.CACHE_REV)
 end)
 
 t.case("files over 32 MiB are skipped and nothing found means no feature", function()
@@ -273,4 +273,84 @@ t.case("the forum-listed town map archives are scanned first", function()
   t.eq({ reads[1], reads[2], reads[3], reads[4] }, { "/a/0/6/7", "/a/0/6/8", "/a/2/4/8", "/a/2/7/6" })
   t.eq(reads[5], "/a/0/0/0")
   t.eq(#store.candidates() >= 4, true)
+end)
+
+t.case("cache key combines scan revision and the manifest version", function()
+  local f = assert(io.open("plugin/manifest.json", "r"))
+  local manifest = f:read("a")
+  f:close()
+  t.eq(manifest:match('"version"%s*:%s*"([^"]+)"'), maps.PLUGIN_VERSION)
+  t.eq(maps.CACHE_REV, maps.INDEX_REV .. "-" .. maps.MAP_SCAN_REV .. "-" .. maps.PLUGIN_VERSION)
+end)
+
+t.case("a finished scan of an older scan revision is rescanned, never reused", function()
+  local stale_headers = { "complete 3", "partial 3", "complete 3-m1-0.6.2", "complete 3-m2-0.6.2", "complete" }
+  for _, head in ipairs(stale_headers) do
+    local store, mock = make({ cache = { ["map/index.txt"] = head .. "\n/a/9/9#1\t999\t999\n",
+      ["map/files.txt"] = "/a/0/0/1\n", ["map/progress.txt"] = "1" } })
+    t.eq(store.state(), "dirs", head)
+    t.ok(finish(store), head)
+    local ids = {}
+    for i, c in ipairs(store.candidates()) do ids[i] = c.id end
+    t.eq(ids, { "/a/0/0/0#3", "/a/0/0/1#1", "/a/0/0/0#4/timg/map.bclim", "/a/0/0/0#1" }, head)
+    t.ok(store.diagnostics().map_archives_scanned > 0, head)
+    t.eq(mock.cache_files["map/index.txt"]:match("^[^\n]+"), "complete " .. maps.CACHE_REV)
+  end
+end)
+
+t.case("a result of the current revision is reused without scanning", function()
+  local store = make({ cache = { ["map/index.txt"] = "complete " .. maps.CACHE_REV .. "\n/a/9/9#1\t640\t480\n" } })
+  t.eq(store.state(), "done")
+  t.eq(store.candidates(), { { id = "/a/9/9#1", w = 640, h = 480 } })
+  t.eq(store.diagnostics().map_archives_scanned, 0)
+end)
+
+t.case("cached PNGs of an older revision are not served", function()
+  local r = { ["/a/0/0/1"] = marker(400, 300, 9) }
+  local store, mock = make({ romfs = r })
+  t.ok(finish(store))
+  local png = assert(store.image("/a/0/0/1#1"))
+  local key
+  for k in pairs(mock.cache_files) do if k:match("^map/%x+%.png$") then key = k end end
+  t.ok(key)
+  mock.cache_files[key] = "STALE"
+  t.eq(store.image("/a/0/0/1#1"), "STALE") -- same key is a hit ...
+  local old = {}
+  for k, v in pairs(mock.cache_files) do if k ~= key then old[k] = v end end
+  -- ... but a PNG written under any other key (older revision) is never looked up
+  old["map/00000000.png"] = "OLD"
+  local store2 = make({ romfs = r, cache = old })
+  t.ok(finish(store2))
+  t.eq(store2.image("/a/0/0/1#1"), png)
+end)
+
+t.case("textures larger than the screen are candidates, ranked first, and map_image returns them full size", function()
+  local r = {
+    ["/a/0/0/0"] = formats.garc({
+      marker(400, 240, 1),                          -- screen sized
+      formats.lz11_literal(marker(600, 400, 2)),    -- larger than the screen, LZ11
+      marker(512, 512, 3),                          -- square atlas
+      marker(1024, 256, 4),                         -- wide strip
+    }),
+  }
+  local store = make({ romfs = r })
+  t.ok(finish(store))
+  local list = store.candidates()
+  local ids = {}
+  for i, c in ipairs(list) do ids[i] = c.id end
+  t.eq(ids, { "/a/0/0/0#3", "/a/0/0/0#4", "/a/0/0/0#2", "/a/0/0/0#1" })
+  t.eq({ list[1].w, list[1].h }, { 512, 512 })
+  local png = assert(store.image("/a/0/0/0#2"))
+  t.eq(string.unpack("<I2I2", png, 9), 600) -- fake PNG: width, height after the signature
+  t.eq(select(2, string.unpack("<I2I2", png, 9)), 400)
+  t.eq(store.diagnostics().map_rev, maps.CACHE_REV)
+end)
+
+t.case("an LZ wrapped 1024x1024 RGBA texture is not skipped by the size cap", function()
+  local big = marker(1024, 1024, 5)
+  t.ok(#big > 4 * 1024 * 1024)
+  t.ok(#big <= maps.MAX_LZ_OUTPUT)
+  local store = make({ romfs = { ["/a/0/0/0"] = formats.garc({ formats.lz11_literal(big) }) } })
+  t.ok(finish(store))
+  t.eq(store.candidates(), { { id = "/a/0/0/0#1", w = 1024, h = 1024 } })
 end)

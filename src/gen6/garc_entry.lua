@@ -3,7 +3,7 @@
 -- Plain readers (text, personal, icons) use `entry`; zones and maps use `decompress` directly.
 local M = {}
 
-M.MAX_LZ_OUTPUT = 4 * 1024 * 1024 -- output size limit of a decompressed entry
+M.MAX_LZ_OUTPUT = 8 * 1024 * 1024 -- output size limit of a decompressed entry
 
 -- Decompresses `e` when its first byte is 0x11 (also 0x10 with allow_lz10) via codec.lz_decompress.
 -- Returns data, status: "lz" (decompressed), "raw" (not compressed or no codec) or

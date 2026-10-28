@@ -642,7 +642,7 @@ __mod["gen6.garc_entry"] = function(...)
 -- Plain readers (text, personal, icons) use `entry`; zones and maps use `decompress` directly.
 local M = {}
 
-M.MAX_LZ_OUTPUT = 4 * 1024 * 1024 -- output size limit of a decompressed entry
+M.MAX_LZ_OUTPUT = 8 * 1024 * 1024 -- output size limit of a decompressed entry
 
 -- Decompresses `e` when its first byte is 0x11 (also 0x10 with allow_lz10) via codec.lz_decompress.
 -- Returns data, status: "lz" (decompressed), "raw" (not compressed or no codec) or
@@ -1277,9 +1277,15 @@ M.MAX_SCAN_MS = 30 * 60 * 1000      -- scan time limit (uz.clock): then `failed`
 -- plus the footer): they are skipped without decompressing (LZ header) or decoding.
 M.MIN_DECODED = (256 * 128) // 2 + 40
 M.INDEX_REV = "3"                   -- cache format revision; other revisions are rescanned
+-- Scan revision: bump whenever the scan rules change (what is accepted, filtered or ranked). PLUGIN_VERSION
+-- must equal the manifest version (tests/test_maps.lua checks it). Both are part of the cache key of the
+-- index and of every PNG, so a plugin update never reuses an older scan result: it rescans.
+M.MAP_SCAN_REV = "m2"
+M.PLUGIN_VERSION = "0.6.3"
+M.CACHE_REV = M.INDEX_REV .. "-" .. M.MAP_SCAN_REV .. "-" .. M.PLUGIN_VERSION
 M.MAX_ENTRIES_PER_FILE = 5000
-M.MAX_LZ_INPUT = 2 * 1024 * 1024
-M.MAX_LZ_OUTPUT = 4 * 1024 * 1024
+M.MAX_LZ_INPUT = 8 * 1024 * 1024
+M.MAX_LZ_OUTPUT = 8 * 1024 * 1024  -- a 1024x1024 RGBA8 texture (largest the GPU takes) needs 4 MiB plus footer
 M.MAX_ERRORS = 500                  -- scan errors tolerated before `failed`
 M.MAX_CANDIDATES = 2000             -- kept in the index
 M.LIST_CAP = 40                     -- returned by map_candidates
@@ -1379,7 +1385,7 @@ function M.new(uz, game_id, revision_fn)
   local function cwrite(name, data) pcall(uz.cache.write, name, data) end
 
   local function save_index(complete)
-    local lines = { (complete and "complete " or "partial ") .. M.INDEX_REV }
+    local lines = { (complete and "complete " or "partial ") .. M.CACHE_REV }
     for _, c in ipairs(cands) do lines[#lines + 1] = c.id .. "\t" .. c.w .. "\t" .. c.h end
     cwrite(M.INDEX, table.concat(lines, "\n") .. "\n")
   end
@@ -1393,8 +1399,8 @@ function M.new(uz, game_id, revision_fn)
       for line in idx:gmatch("[^\n]+") do
         if first then
           first = false
-          local kind, rev = line:match("^(%a+) (%w+)$")
-          if rev == M.INDEX_REV and (kind == "complete" or kind == "partial") then
+          local kind, rev = line:match("^(%a+) ([%w%.%-_]+)$")
+          if rev == M.CACHE_REV and (kind == "complete" or kind == "partial") then
             usable = true
             if kind == "complete" then state = "done" end
           else
@@ -1628,6 +1634,7 @@ function M.new(uz, game_id, revision_fn)
   function self.diagnostics()
     return {
       map_state = state,
+      map_rev = M.CACHE_REV,
       map_archives_scanned = fidx,
       map_archives_total = #files,
       map_archives_skipped = stat.archives_skipped,
@@ -1660,7 +1667,7 @@ function M.new(uz, game_id, revision_fn)
     if state == "unsupported" then return nil, "unsupported" end
     local path, entry, sub = M.parse_id(id)
     if not path then return nil, "unknown_map" end
-    local key = "map/" .. hash(id) .. ".png"
+    local key = "map/" .. hash(id .. "|" .. M.CACHE_REV) .. ".png"
     local hit = cread(key)
     if hit then
       if #hit > M.MAX_PNG then return nil, "too_large" end
