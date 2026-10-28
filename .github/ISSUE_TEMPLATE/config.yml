@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Uzume app or server problem
+    url: https://github.com/phabioo/uzume/issues/new/choose
+    about: Problems that are not caused by this plugin.
+  - name: Plugin API documentation
+    url: https://github.com/phabioo/uzume/blob/main/docs/guides/plugin-api.md
+    about: Reference for plugin authors.

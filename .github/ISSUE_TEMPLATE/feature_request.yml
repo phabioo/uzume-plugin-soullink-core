@@ -1,0 +1,22 @@
+name: Feature request
+description: An idea that would make this plugin better
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    attributes:
+      label: Is there an existing issue for this?
+      options:
+        - label: I have searched the existing issues
+          required: true
+  - type: textarea
+    id: what-feature
+    attributes:
+      label: What feature are you suggesting?
+    validations:
+      required: true
+  - type: textarea
+    id: why-feature
+    attributes:
+      label: Why would it be useful?
+    validations:
+      required: true

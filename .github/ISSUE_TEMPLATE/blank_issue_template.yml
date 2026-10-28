@@ -1,0 +1,6 @@
+name: Blank issue (developers only)
+description: For maintainers. Everybody else, please use the bug report or the feature request.
+body:
+  - type: textarea
+    attributes:
+      label: Issue
