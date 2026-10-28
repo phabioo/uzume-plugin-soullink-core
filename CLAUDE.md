@@ -41,5 +41,5 @@ uzume-plugin-soullink-core is the shared Pokémon foundation plugin. It detects 
 
 ## Pointers
 
-- Plan and status: `docs/roadmap.md`. Workflow, roles and brief template: `docs/workflow.md`. Per-game adapter docs: `docs/games/<game>.md`.
+- Open work: GitHub issues and milestones; direction and history: `docs/roadmap.md`. Workflow, roles and brief template: `docs/workflow.md`. Per-game adapter docs: `docs/games/<game>.md`.
 - Uzume docs: https://github.com/phabioo/uzume (`docs/architecture/12-plugins.md`, `docs/adr/0023-plugins.md`).
