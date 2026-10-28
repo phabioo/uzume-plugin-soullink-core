@@ -61,8 +61,17 @@ Do not return full logs or file contents. Do not commit.
 
 - One PR per package with green CI, one topic per PR.
 - Every PR description has a `## Changelog` section (template in `.github/pull_request_template.md`, `none` for CI/docs/test-only PRs); CI checks it and the release notes are built from it.
-- Milestone PRs update `docs/roadmap.md` (status) and the status line in `README.md`; READMEs stay short, detail goes to `docs/`.
+- Milestone PRs update the status line in `docs/roadmap.md` and `README.md` (status = version line; open work = issues, not the roadmap); READMEs stay short, detail goes to `docs/`.
 - Auto-merge is enabled on all PRs once the repository has "Allow auto-merge" and required checks configured.
+
+## Issues and milestones
+
+- Open work is tracked as GitHub issues in milestones, here and in phabioo/uzume. Milestones are Uzume releases with the same title in every repository: "Uzume 21" (first stable of the new numbering; local tests needed for it) and "Uzume 22" (next line).
+- A plugin issue sits in the milestone of the Uzume release it is needed for or tested with; plugin improvements without such a tie have no milestone. Plugins keep their own SemVer versions; only Uzume changes its numbering.
+- Labels: `work-package` (one thread, one PR), `leftover`, `local-test` (needs Fabio's real game or hardware), `triage`, plus theme labels (emulation, randomizer, plugins, together, platforms, app, install-and-sharing).
+- One thread works one issue; the PR body says "Closes #N"; findings become issues.
+- User documentation of the plugins lives in the central Uzume wiki page [Plugins](https://github.com/phabioo/uzume/wiki/Plugins); this repository has no own wiki. Developer docs stay here.
+- Decision record: Uzume ADR 0036 (`docs/adr/0036-issues-milestones-wiki-and-numbering.md`).
 
 ## Rules
 
