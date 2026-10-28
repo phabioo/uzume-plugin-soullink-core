@@ -115,7 +115,7 @@ function M.parse(plain)
   return rec
 end
 
--- Crypto (PKHeX PokeCrypto.cs, same algorithm as the host helpers fb.codec.pk6_decrypt / pk6_encrypt,
+-- Crypto (PKHeX PokeCrypto.cs, same algorithm as the host helpers uz.codec.pk6_decrypt / pk6_encrypt,
 -- kept here so write helpers do not depend on the host). seed = encryption constant (first u32);
 -- seed = seed * 0x41C64E6D + 0x6073 (32 bit); each u16 is xored with seed >> 16. Bytes 0x08..0xE7 are
 -- crypted and their four 56-byte blocks shuffled by (EC >> 13) & 31 modulo 24; the party extension

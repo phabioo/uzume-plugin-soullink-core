@@ -1,4 +1,4 @@
--- Fake `fb` for tests. See fb_mock.new.
+-- Fake `uz` for tests. See uz_mock.new.
 local M = {}
 
 -- Minimal reader for flat JSON objects with string values.
@@ -70,10 +70,10 @@ function M.new(opts)
   local mock = { logs = {}, events = {}, provided = {}, watches = {}, dev_watches = {}, cache_files = {} }
   local regions = opts.memory or {}
   mock.regions = regions
-  local fb = { api = 1, plugin = { id = "uzume.soullink-core", version = "0.3.1" } }
-  fb.game = opts.game or {}
-  if opts.language and not fb.game.language then fb.game.language = opts.language end
-  mock.fb = fb
+  local uz = { api = 1, plugin = { id = "uzume.soullink-core", version = "0.3.1" } }
+  uz.game = opts.game or {}
+  if opts.language and not uz.game.language then uz.game.language = opts.language end
+  mock.uz = uz
 
   local function read(addr, len)
     if type(addr) ~= "number" or len < 0 then return nil end
@@ -93,7 +93,7 @@ function M.new(opts)
     end
   end
 
-  fb.memory = {
+  uz.memory = {
     watch = function(key, addr, len) mock.watches[key] = { addr = addr, len = len } end,
     unwatch = function(key) mock.watches[key] = nil end,
     u8 = reader("<I1", 1), u16 = reader("<I2", 2), u32 = reader("<I4", 4), u64 = reader("<i8", 8),
@@ -105,7 +105,7 @@ function M.new(opts)
   for k, v in pairs(opts.cache or {}) do mock.cache_files[k] = v end
 
   local romfs = opts.romfs or {}
-  fb.rom = {
+  uz.rom = {
     size = function() return opts.rom and #opts.rom or nil end,
     read = function(offset, len)
       if not opts.rom or offset >= #opts.rom then return nil end
@@ -133,11 +133,11 @@ function M.new(opts)
     end,
   }
 
-  fb.codec = opts.codec or {}
+  uz.codec = opts.codec or {}
 
-  fb.log = {}
+  uz.log = {}
   for _, level in ipairs({ "debug", "info", "warn", "error" }) do
-    fb.log[level] = function(...)
+    uz.log[level] = function(...)
       local parts = table.pack(...)
       for i = 1, parts.n do parts[i] = tostring(parts[i]) end
       mock.logs[#mock.logs + 1] = { level = level, text = table.concat(parts, "\t", 1, parts.n) }
@@ -145,7 +145,7 @@ function M.new(opts)
   end
 
   local handlers = {}
-  fb.events = {
+  uz.events = {
     emit = function(name, value)
       check_value(value, 1)
       mock.events[#mock.events + 1] = { name = name, value = deep_copy(value) }
@@ -153,13 +153,13 @@ function M.new(opts)
     on = function(plugin_id, name, fn) handlers[#handlers + 1] = { plugin_id, name, fn } end,
   }
 
-  fb.provide = function(name, tbl)
+  uz.provide = function(name, tbl)
     assert(type(name) == "string" and type(tbl) == "table", "bad provide")
     mock.provided[name] = tbl
   end
 
   local tick_fn
-  fb.on_tick = function(fn) tick_fn = fn end
+  uz.on_tick = function(fn) tick_fn = fn end
   mock.frame = 0
   function mock.tick(n)
     for _ = 1, n or 1 do
@@ -178,7 +178,7 @@ function M.new(opts)
       for k, v in pairs(M.read_json_flat(s)) do strings[k] = v end
     end
   end
-  fb.i18n = {
+  uz.i18n = {
     t = function(key, vars)
       local s = strings[key] or key
       return (s:gsub("{([%w_]+)}", function(k)
@@ -187,15 +187,15 @@ function M.new(opts)
     end,
   }
 
-  fb.cache = {
+  uz.cache = {
     write = function(name, data) mock.cache_files[name] = data; return true end,
     read = function(name) return mock.cache_files[name] end,
     exists = function(name) return mock.cache_files[name] ~= nil end,
   }
 
   local now = 0
-  fb.clock = function() now = now + 1; return now end
-  fb.dev = {
+  uz.clock = function() now = now + 1; return now end
+  uz.dev = {
     watch = function(label, addr, kind) mock.dev_watches[label] = { addr = addr, kind = kind } end,
     unwatch = function(label) mock.dev_watches[label] = nil end,
   }

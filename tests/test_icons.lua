@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local crypto = require("pk6_crypto")
 local oras = require("gen6.oras")
@@ -49,13 +49,13 @@ local function make(opts)
   local codec = formats.fake_codec()
   codec.pk6_decrypt = crypto.decrypt
   if opts.codec then for k, v in pairs(opts.codec) do codec[k] = v end end
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n",
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n",
     romfs = opts.romfs or romfs(), cache = opts.cache, memory = opts.memory })
   local reads = {}
-  local orig = mock.fb.rom.romfs
-  mock.fb.rom.romfs = function(p) reads[#reads + 1] = p; return orig(p) end
-  if opts.no_list then mock.fb.rom.romfs_list = nil end
-  local a = oras.attach({ fb = mock.fb, game = {}, detected = {} })
+  local orig = mock.uz.rom.romfs
+  mock.uz.rom.romfs = function(p) reads[#reads + 1] = p; return orig(p) end
+  if opts.no_list then mock.uz.rom.romfs_list = nil end
+  local a = oras.attach({ uz = mock.uz, game = {}, detected = {} })
   return a, mock, reads
 end
 
@@ -145,8 +145,8 @@ end)
 t.case("a single tick does at most one directory listing or candidate read", function()
   local a, mock, reads = make()
   local lists = 0
-  local orig = mock.fb.rom.romfs_list
-  mock.fb.rom.romfs_list = function(d) lists = lists + 1; return orig(d) end
+  local orig = mock.uz.rom.romfs_list
+  mock.uz.rom.romfs_list = function(d) lists = lists + 1; return orig(d) end
   for _ = 1, icons.MAX_STEPS do
     local l0, r0 = lists, #reads
     a:icon(25)
@@ -206,7 +206,7 @@ t.case("v0.3.3: diagnostics() names where icon reading stops", function()
   t.eq(b:diagnostics().icons_path, "/a/0/9/1 (unreadable)")
 end)
 
--- v0.4.1: one-time debug export of raw icon entries into the plugin cache (fb.cache), synthetic data only
+-- v0.4.1: one-time debug export of raw icon entries into the plugin cache (uz.cache), synthetic data only
 t.case("v0.4.1: debug export writes diag files once discovery is done", function()
   local a, mock = make({ romfs = { ["/a/0/9/1"] = lz_icon_garc(800, 40, 30) } })
   t.eq(a:diagnostics().icon_export, "pending")
@@ -243,7 +243,7 @@ end)
 
 t.case("v0.4.1: debug export never throws and reports the reason", function()
   local a, mock = make({ romfs = { ["/a/0/9/1"] = icon_garc(800, 40, 30) } })
-  mock.fb.cache.write = function(name) if name:match("^diag/") then error("disk full") end return true end
+  mock.uz.cache.write = function(name) if name:match("^diag/") then error("disk full") end return true end
   t.ok(run_until(a, function() return (a:diagnostics().icon_export or "") ~= "pending" end), "reported")
   t.eq(a:diagnostics().icon_export, "write_failed")
   local b = make({ romfs = { ["/a/0/0/1"] = string.rep("x", 1000) } })

@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local crypto = require("pk6_crypto")
 local oras = require("gen6.oras")
@@ -61,9 +61,9 @@ end
 local function make(count)
   local codec = formats.fake_codec()
   codec.pk6_decrypt = crypto.decrypt
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n",
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n",
     romfs = { ["/a/1/9/6"] = personal_garc(), ["/a/0/9/1"] = icon_garc(count) } })
-  return oras.attach({ fb = mock.fb, game = {}, detected = {} }), mock
+  return oras.attach({ uz = mock.uz, game = {}, detected = {} }), mock
 end
 
 local function ready(a)

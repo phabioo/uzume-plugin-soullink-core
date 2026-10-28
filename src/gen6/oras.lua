@@ -59,9 +59,9 @@ local function popcount(v)
 end
 
 function M.attach(ctx)
-  local fb = ctx.fb
-  local pers = personal.new(fb)
-  local icon_store = icons.new(fb, pers)
+  local uz = ctx.uz
+  local pers = personal.new(uz)
+  local icon_store = icons.new(uz, pers)
   local ticks = 0
   local map_store, names, zone_store, battle_mod
   local chosen
@@ -70,9 +70,9 @@ function M.attach(ctx)
   local last_badges
   local warned = {}
 
-  local overrides = addr.load_overrides(fb)
+  local overrides = addr.load_overrides(uz)
   for _, line in ipairs(overrides.bad) do
-    if fb.log and fb.log.warn then fb.log.warn("ignored address override line: " .. line) end
+    if uz.log and uz.log.warn then uz.log.warn("ignored address override line: " .. line) end
   end
 
   local sets = {}
@@ -80,22 +80,22 @@ function M.attach(ctx)
     sets[i] = { name = rev.name, a = addr.resolve(rev, overrides), state = rev.state }
     for _, key in ipairs(addr.KEYS) do
       local a = sets[i].a[key]
-      if a then fb.memory.watch("oras." .. rev.name .. "." .. key, a, addr.LENGTHS[key]) end
+      if a then uz.memory.watch("oras." .. rev.name .. "." .. key, a, addr.LENGTHS[key]) end
     end
   end
 
   local function warn_once(key, msg)
     if warned[key] then return end
     warned[key] = true
-    if fb.log and fb.log.warn then fb.log.warn(msg) end
+    if uz.log and uz.log.warn then uz.log.warn(msg) end
   end
 
   local function A(key) return chosen and chosen.a[key] or nil end
 
   -- Plain PK6 -> record, nil when invalid (checksum, species 1..721).
   local function decode(buf)
-    if not (fb.codec and fb.codec.pk6_decrypt) then return nil end
-    local plain, ok = fb.codec.pk6_decrypt(buf)
+    if not (uz.codec and uz.codec.pk6_decrypt) then return nil end
+    local plain, ok = uz.codec.pk6_decrypt(buf)
     if not plain or not ok then return nil end
     local rec = pk6.parse(plain)
     if not rec or rec.species < 1 or rec.species > pk6.MAX_SPECIES then return nil end
@@ -103,7 +103,7 @@ function M.attach(ctx)
   end
 
   local function read_record(base, size)
-    local raw = fb.memory.bytes(base, size)
+    local raw = uz.memory.bytes(base, size)
     if not raw or #raw < size then return nil end
     return decode(raw)
   end
@@ -112,9 +112,9 @@ function M.attach(ctx)
   -- stream seeded with the EC) are joined into the 260-byte save layout. Level, HP, max HP and
   -- status are taken only when they pass a sanity check. Returns record, live (bool).
   local function read_party_slot(base)
-    local raw = fb.memory.bytes(base, 0xE8)
+    local raw = uz.memory.bytes(base, 0xE8)
     if not raw or #raw < 0xE8 then return nil end
-    local stats = fb.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN) or string.rep("\0", M.STATS_LEN)
+    local stats = uz.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN) or string.rep("\0", M.STATS_LEN)
     local buf = raw .. stats .. string.rep("\0", pk6.SIZE_PARTY - 0xE8 - M.STATS_LEN)
     local rec = decode(buf)
     if not rec then return nil end
@@ -152,21 +152,21 @@ function M.attach(ctx)
         for _, other in ipairs(sets) do
           if other ~= set then
             for _, key in ipairs(addr.KEYS) do
-              if other.a[key] then fb.memory.unwatch("oras." .. other.name .. "." .. key) end
+              if other.a[key] then uz.memory.unwatch("oras." .. other.name .. "." .. key) end
             end
           end
         end
-        if fb.log and fb.log.info then fb.log.info("game revision " .. set.name) end
+        if uz.log and uz.log.info then uz.log.info("game revision " .. set.name) end
         return chosen
       end
     end
     return nil
   end
 
-  local function u16(a) return a and fb.memory.u16(a) or nil end
+  local function u16(a) return a and uz.memory.u16(a) or nil end
 
   local function f32(a)
-    local b = a and fb.memory.bytes(a, 4)
+    local b = a and uz.memory.bytes(a, 4)
     if not b or #b < 4 then return nil end
     local v = string.unpack("<f", b)
     if v ~= v or v > 1e7 or v < -1e7 then return nil end
@@ -176,7 +176,7 @@ function M.attach(ctx)
   -- MyStatus block: { name, tid, sid, version, language_id, language } or nil.
   local function mystatus()
     local base = A("mystatus")
-    local raw = base and fb.memory.bytes(base, 0x70)
+    local raw = base and uz.memory.bytes(base, 0x70)
     if not raw or #raw < 0x70 then return nil end
     local tid, sid = string.unpack("<I2I2", raw, MS_TID + 1)
     local lang_id = raw:byte(MS_LANGUAGE + 1)
@@ -246,12 +246,12 @@ function M.attach(ctx)
     return best and best.first.language or nil
   end
 
-  names = text.new(fb, { language_fn = function() return obj:language() end })
-  zone_store = zones.new(fb, {
+  names = text.new(uz, { language_fn = function() return obj:language() end })
+  zone_store = zones.new(uz, {
     name = function(kind, id) return names.peek(kind, id) end,
     names_state = function() return names.state() end,
   })
-  map_store = maps.new(fb, ctx.game and ctx.game.id, function() return chosen and chosen.name end)
+  map_store = maps.new(uz, ctx.game and ctx.game.id, function() return chosen and chosen.name end)
 
   function obj:revision()
     local set = detect()
@@ -279,19 +279,19 @@ function M.attach(ctx)
       local key = loc.zone .. ":" .. tostring(loc.location) .. ":" .. tostring(loc.name)
       if key ~= last_loc_key then
         last_loc_key = key
-        fb.events.emit("location.changed", loc)
+        uz.events.emit("location.changed", loc)
       end
     end
     if ticks % M.BADGE_POLL_EVERY == 0 then
       local misc = A("misc")
-      local b = misc and fb.memory.u8(misc + MISC_BADGES)
+      local b = misc and uz.memory.u8(misc + MISC_BADGES)
       if b then
         if last_badges ~= nil and b ~= last_badges then
           local new = {}
           for i = 1, 8 do
             if (b >> (i - 1)) & 1 == 1 and (last_badges >> (i - 1)) & 1 == 0 then new[#new + 1] = i end
           end
-          fb.events.emit("badges.changed", { count = popcount(b), new = new })
+          uz.events.emit("badges.changed", { count = popcount(b), new = new })
         end
         last_badges = b
       end
@@ -307,7 +307,7 @@ function M.attach(ctx)
     return u16(A("map_id")), f32(A("player_x")), f32(A("player_y"))
   end
 
-  battle_mod = oras_battle.new(fb, {
+  battle_mod = oras_battle.new(uz, {
     addr = A,
     read_slot = function(base)
       local rec = read_party_slot(base)
@@ -434,13 +434,13 @@ function M.attach(ctx)
     }
     local misc = A("misc")
     if misc then
-      local money = fb.memory.u32(misc + MISC_MONEY)
+      local money = uz.memory.u32(misc + MISC_MONEY)
       if money and money <= M.MAX_MONEY then out.money = money end
-      local b = fb.memory.u8(misc + MISC_BADGES)
+      local b = uz.memory.u8(misc + MISC_BADGES)
       if b then out.badges = popcount(b) end
     end
     local pt = A("play_time")
-    local raw = pt and fb.memory.bytes(pt, 4)
+    local raw = pt and uz.memory.bytes(pt, 4)
     if raw and #raw == 4 then
       local h, m, s = string.unpack("<I2I1I1", raw)
       if m < 60 and s < 60 then out.play_time = { h = h, m = m, s = s } end
@@ -453,7 +453,7 @@ function M.attach(ctx)
     if not set then return nil, "not_ready" end
     local misc = A("misc")
     if not misc then return nil, "unsupported" end
-    local b = fb.memory.u8(misc + MISC_BADGES)
+    local b = uz.memory.u8(misc + MISC_BADGES)
     if b == nil then return nil, "not_ready" end
     local flags = {}
     for i = 1, 8 do flags[i] = (b >> (i - 1)) & 1 == 1 end
@@ -465,7 +465,7 @@ function M.attach(ctx)
     if not detect() then return nil end
     local base = A("event_flags")
     if not base or math.type(n) ~= "integer" or n < 0 or n >= 0xD00 then return nil end
-    local b = fb.memory.u8(base + (n >> 3))
+    local b = uz.memory.u8(base + (n >> 3))
     if b == nil then return nil end
     return (b >> (n & 7)) & 1 == 1
   end
@@ -506,7 +506,7 @@ function M.attach(ctx)
 
   -- Location: { kind = "team", slot = 1..6 } or { kind = "box", box = 1..31, slot = 1..30 }.
   -- Returns { addr, bytes, ops = { {addr, bytes}, ... }, warnings = { ... }, record = <new record> }:
-  -- apply every op of `ops` in order with fb.memory.write. `addr`/`bytes` are the first op. Errors:
+  -- apply every op of `ops` in order with uz.memory.write. `addr`/`bytes` are the first op. Errors:
   -- nil, "not_ready" | "invalid_location" | "empty_slot" | "growth_unavailable" | "invalid_<field>" |
   -- "ev_total" | "unknown_field:<name>".
   function obj:encode_pokemon(location, fields)
@@ -519,9 +519,9 @@ function M.attach(ctx)
       local slot = location.slot
       if not (math.type(slot) == "integer" and slot >= 1 and slot <= M.PARTY_SLOTS) then return nil, "invalid_location" end
       base = set.a.party + (slot - 1) * M.PARTY_STRIDE
-      local raw = fb.memory.bytes(base, 0xE8)
+      local raw = uz.memory.bytes(base, 0xE8)
       if not raw or #raw < 0xE8 then return nil, "not_ready" end
-      ext_raw = fb.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN)
+      ext_raw = uz.memory.bytes(base + M.STATS_OFFSET, M.STATS_LEN)
       if ext_raw and #ext_raw == M.STATS_LEN then
         local p2, ok2 = pk6.decrypt(raw .. ext_raw .. string.rep("\0", pk6.SIZE_PARTY - 0xE8 - M.STATS_LEN))
         local r2 = ok2 and pk6.parse(p2)
@@ -536,7 +536,7 @@ function M.attach(ctx)
         return nil, "invalid_location"
       end
       base = set.a.box + ((b - 1) * M.BOX_SLOTS + (s - 1)) * M.BOX_SIZE
-      local raw = fb.memory.bytes(base, M.BOX_SIZE)
+      local raw = uz.memory.bytes(base, M.BOX_SIZE)
       if not raw or #raw < M.BOX_SIZE then return nil, "not_ready" end
       plain, ok = pk6.decrypt(raw)
       size = M.BOX_SIZE
@@ -588,7 +588,7 @@ function M.attach(ctx)
     if not set then return nil, "not_ready" end
     if math.type(n) ~= "integer" or n < 1 or n > M.BOX_COUNT then return nil, "out_of_range" end
     local base = set.a.box + (n - 1) * M.BOX_SLOTS * M.BOX_SIZE
-    if not fb.memory.bytes(base, M.BOX_SLOTS * M.BOX_SIZE) then return nil, "not_ready" end
+    if not uz.memory.bytes(base, M.BOX_SLOTS * M.BOX_SIZE) then return nil, "not_ready" end
     local out = {}
     for s = 1, M.BOX_SLOTS do
       local rec = read_record(base + (s - 1) * M.BOX_SIZE, M.BOX_SIZE)

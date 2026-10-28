@@ -1,4 +1,4 @@
--- Gen 6 palette BCLIM decoder in Lua (box icons). The Player's fb.codec.bclim decodes this variant
+-- Gen 6 palette BCLIM decoder in Lua (box icons). The Player's uz.codec.bclim decodes this variant
 -- too, but with one fixed set of choices (RGBA5551 colours, low nibble first) that did not give a
 -- usable picture on a real Omega Ruby (v0.3.3 field report). The choices are parameters here so
 -- variants can be compared (icon_variants); the field report on a real Omega Ruby EU confirmed
@@ -217,7 +217,7 @@ function M.decode_variant(s, label)
 end
 
 -- Decodes an icon the way icon() does: plain 16-bit layout as a plain texture, palette layout with
--- the default variant; nil when the data is neither (the caller uses fb.codec.bclim).
+-- the default variant; nil when the data is neither (the caller uses uz.codec.bclim).
 function M.decode_auto(s)
   local layout = M.layout(s)
   if layout == "plain16" then return M.decode_plain(s) end

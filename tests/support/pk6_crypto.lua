@@ -58,7 +58,7 @@ function M.decrypt(enc)
   return plain, string.unpack("<I2", plain, 7) == M.checksum(plain)
 end
 
--- Encrypts without touching the checksum (like fb.codec.pk6_encrypt).
+-- Encrypts without touching the checksum (like uz.codec.pk6_encrypt).
 function M.encrypt(plain)
   check_len(plain)
   local ec = string.unpack("<I4", plain)

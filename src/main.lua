@@ -6,9 +6,9 @@ local serialize = require("core.serialize")
 
 local TEAM_EVERY = 15
 
-local entry, detected = games.detect(fb.game)
+local entry, detected = games.detect(uz.game)
 if not entry then
-  fb.log.info(fb.i18n.t("not_pokemon"))
+  uz.log.info(uz.i18n.t("not_pokemon"))
   return
 end
 
@@ -16,35 +16,35 @@ end
 -- Off by default and never switched on by the plugin itself.
 local DEMO_KEY = "dev.demo_data"
 local function demo_enabled()
-  if type(fb.store) ~= "table" or type(fb.store.get) ~= "function" then return false end
-  local ok, value = pcall(fb.store.get, DEMO_KEY)
+  if type(uz.store) ~= "table" or type(uz.store.get) ~= "function" then return false end
+  local ok, value = pcall(uz.store.get, DEMO_KEY)
   return ok and value == true
 end
 
 local adapter
 local demo = demo_enabled()
 local adapter_mod = adapters.get(demo and "demo.adapter" or entry.adapter)
-if demo then fb.log.info(fb.i18n.t("demo_on")) end
+if demo then uz.log.info(uz.i18n.t("demo_on")) end
 if adapter_mod then
-  local ok, result = pcall(adapter_mod.attach, { fb = fb, game = entry, detected = detected })
+  local ok, result = pcall(adapter_mod.attach, { uz = uz, game = entry, detected = detected })
   if ok and type(result) == "table" then
     adapter = result
   else
-    fb.log.error(fb.i18n.t("adapter_failed", { name = entry.name, error = tostring(result) }))
+    uz.log.error(uz.i18n.t("adapter_failed", { name = entry.name, error = tostring(result) }))
   end
 end
 if not adapter then
-  fb.log.warn(fb.i18n.t("no_adapter", { name = entry.name }))
+  uz.log.warn(uz.i18n.t("no_adapter", { name = entry.name }))
 end
 
 local api = interface.new(entry, detected, adapter)
-fb.provide("pokemon.core", api)
+uz.provide("pokemon.core", api)
 
 if adapter then
-  fb.events.emit("game.detected", { game_id = entry.id, gen = entry.gen, supported = true, demo = demo })
+  uz.events.emit("game.detected", { game_id = entry.id, gen = entry.gen, supported = true, demo = demo })
 
   local ticks, last = 0, nil
-  fb.on_tick(function()
+  uz.on_tick(function()
     ticks = ticks + 1
     if type(adapter.tick) == "function" then adapter:tick() end
     if ticks % TEAM_EVERY ~= 0 then return end
@@ -53,7 +53,7 @@ if adapter then
     local s = serialize.serialize(team)
     if s ~= last then
       last = s
-      fb.events.emit("team.changed", { team = team })
+      uz.events.emit("team.changed", { team = team })
     end
   end)
 end

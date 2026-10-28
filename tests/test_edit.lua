@@ -1,6 +1,6 @@
 -- Write helpers: PK6 crypto, pk6_edit, and the ORAS adapter's encode_* (synthetic data only).
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local crypto = require("pk6_crypto")
 local build = require("pk6_build")
 local formats = require("formats")
@@ -189,8 +189,8 @@ local function make(world, extra)
   local opts = { game = { system = "3ds", code = "000400000011C400" }, memory = world and mem.world(world) or {}, codec = c,
     romfs = { ["/a/1/9/5"] = personal_garc() }, i18n_dir = "plugin/i18n" }
   for k, v in pairs(extra or {}) do opts[k] = v end
-  local mock = fb_mock.new(opts)
-  local a = oras.attach({ fb = mock.fb, game = { id = "pokemon_omega_ruby" }, detected = {} })
+  local mock = uz_mock.new(opts)
+  local a = oras.attach({ uz = mock.uz, game = { id = "pokemon_omega_ruby" }, detected = {} })
   for _ = 1, 70 do a:tick() end
   return a, mock
 end
@@ -224,8 +224,8 @@ t.case("encode_pokemon team slot: main block, live stats extension, round trip",
   t.eq(team[1].species, 25) -- slot 1 untouched
   -- live extension recomputed from the personal base stats
   local st = edit.compute_stats({ hp = 45, atk = 49, def = 49, spe = 45, spa = 65, spd = 65 }, m.ivs, m.evs, 35, 3)
-  local ext = pk6.parse(select(1, pk6.decrypt(mock.fb.memory.bytes(V10.party + 0x1E4, 0xE8) ..
-    mock.fb.memory.bytes(V10.party + 0x1E4 + 0x158, 22) .. string.rep("\0", 6))))
+  local ext = pk6.parse(select(1, pk6.decrypt(mock.uz.memory.bytes(V10.party + 0x1E4, 0xE8) ..
+    mock.uz.memory.bytes(V10.party + 0x1E4 + 0x158, 22) .. string.rep("\0", 6))))
   t.eq(ext.party_ext.level, 35); t.eq(ext.party_ext.max_hp, st.hp); t.eq(ext.party_ext.stats.atk, st.atk)
   t.eq(ext.party_ext.hp, st.hp) -- a species change fills HP
 end)

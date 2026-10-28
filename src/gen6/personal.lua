@@ -25,7 +25,7 @@ M.FORM_COUNT_OFFSET = 0x20 -- u8 FormeCount
 M.MIN_ENTRIES = 722 -- species 0..721
 M.MAX_ATTEMPTS = 3
 
-function M.new(fb, opts)
+function M.new(uz, opts)
   opts = opts or {}
   local paths = opts.paths or M.CANDIDATE_PATHS
   local esize = opts.entry_size or M.ENTRY_SIZE
@@ -45,14 +45,14 @@ function M.new(fb, opts)
   -- Returns a table species -> rate (1..721), a table species -> {index, count} and the source of
   -- the entries ("whole", string | "files"), or nil when data is not a personal table.
   local function validate(data)
-    local g, gerr = fb.codec.garc(data)
+    local g, gerr = uz.codec.garc(data)
     if type(g) ~= "table" or type(g.count) ~= "number" then
       reject("garc_rejected: " .. (tostring(gerr):gsub("[^%w _%.:%-]", "?"):sub(1, 40)))
       return nil
     end
     local out, fo = {}, {}
     local whole
-    local last = garc_entry.entry(fb.codec, data, g.count)
+    local last = garc_entry.entry(uz.codec, data, g.count)
     if type(last) == "string" and #last % esize == 0 and #last // esize >= M.MIN_ENTRIES then whole = last end
     if whole then
       for s = 1, M.MIN_ENTRIES - 1 do
@@ -64,7 +64,7 @@ function M.new(fb, opts)
       return out, fo, whole
     elseif g.count >= M.MIN_ENTRIES then
       for s = 1, M.MIN_ENTRIES - 1 do
-        local e = garc_entry.entry(fb.codec, data, s + 1)
+        local e = garc_entry.entry(uz.codec, data, s + 1)
         if type(e) ~= "string" or #e ~= esize then reject("entry_size"); return nil end
         local r = e:byte(goff + 1)
         if r > 5 then return nil end
@@ -81,18 +81,18 @@ function M.new(fb, opts)
     if rates then return true end
     if attempts >= M.MAX_ATTEMPTS then return false end
     attempts = attempts + 1
-    if not (fb and fb.rom and fb.rom.romfs and fb.codec and fb.codec.garc and fb.codec.garc_file) then
+    if not (uz and uz.rom and uz.rom.romfs and uz.codec and uz.codec.garc and uz.codec.garc_file) then
       return false
     end
     for _, path in ipairs(paths) do
-      local data = fb.rom.romfs(path)
+      local data = uz.rom.romfs(path)
       if type(data) ~= "string" then reject("romfs_unreadable") end
       if type(data) == "string" then
         local r, fo, whole = validate(data)
         if r then
           rates, forms, whole_data, garc_data = r, fo, whole, data
           self.path = path
-          if fb.log and fb.log.info then fb.log.info("personal data accepted at " .. path) end
+          if uz.log and uz.log.info then uz.log.info("personal data accepted at " .. path) end
           return true
         end
       end
@@ -128,7 +128,7 @@ function M.new(fb, opts)
       local e = whole_data:sub(idx * esize + 1, idx * esize + esize)
       return #e == esize and e or nil
     end
-    local e = garc_entry.entry(fb.codec, garc_data, idx + 1)
+    local e = garc_entry.entry(uz.codec, garc_data, idx + 1)
     return (type(e) == "string" and #e == esize) and e or nil
   end
 

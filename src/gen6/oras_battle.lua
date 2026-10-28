@@ -22,7 +22,7 @@ local RAW_LEN = 0xE8
 
 -- env: addr(key) -> address|nil, read_slot(address) -> record|nil (checksummed, live stats merged),
 --      position() -> zone, x, y, team() -> list|nil, location_id(zone) -> id|nil
-function M.new(fb, env)
+function M.new(uz, env)
   local self = {}
   local st = { active = false }
   local last_raw = {}
@@ -37,7 +37,7 @@ function M.new(fb, env)
   local function read_mons(kind)
     local a = kind_addr(kind, "mons")
     if not a then return nil end
-    local raw = fb.memory.bytes(a, addr.MON_SLOTS * addr.MON_STRIDE)
+    local raw = uz.memory.bytes(a, addr.MON_SLOTS * addr.MON_STRIDE)
     local out = {}
     if not raw then return out end
     for i = 0, addr.MON_SLOTS - 1 do
@@ -112,7 +112,7 @@ function M.new(fb, env)
   local function flag_ok()
     local a = env.addr("battle_flag")
     if not a then return true end
-    return fb.memory.u32(a) == addr.FLAG_BATTLE
+    return uz.memory.u32(a) == addr.FLAG_BATTLE
   end
 
   local function confirmed(kind)
@@ -139,19 +139,19 @@ function M.new(fb, env)
     if #foes == 0 then return false end
     local zone, x, y = env.position()
     st = { active = true, kind = kind, horde = horde, zone = zone, x = x, y = y, miss = 0 }
-    fb.events.emit("battle.started", { kind = kind, horde = horde, foes = species_list(foes) })
+    uz.events.emit("battle.started", { kind = kind, horde = horde, foes = species_list(foes) })
     if kind == "wild" then
       seq = seq + 1
       local first = foes[1]
       local entry = {
         seq = seq, species = first.species, form = first.form, level = first.level, shiny = first.shiny,
         horde = horde, zone = zone, location = zone and env.location_id(zone) or nil,
-        frame = fb.memory.frame and fb.memory.frame() or polls,
+        frame = uz.memory.frame and uz.memory.frame() or polls,
       }
       entry.species_name = env.species_name and env.species_name(first.species) or nil
       encounters[#encounters + 1] = entry
       if #encounters > M.MAX_ENCOUNTERS then table.remove(encounters, 1) end
-      fb.events.emit("encounter", entry)
+      uz.events.emit("encounter", entry)
     end
     return true
   end
@@ -160,13 +160,13 @@ function M.new(fb, env)
     local kind = st.kind
     st = { active = false }
     pending = {}
-    fb.events.emit("battle.ended", { kind = kind })
+    uz.events.emit("battle.ended", { kind = kind })
   end
 
   local function over()
     local a = env.addr("battle_flag")
     if a then
-      local v = fb.memory.u32(a)
+      local v = uz.memory.u32(a)
       if v ~= nil and v ~= addr.FLAG_BATTLE then return true end
     end
     local zone, x, y = env.position()
@@ -192,7 +192,7 @@ function M.new(fb, env)
       local a = kind_addr(kind, "foes")
       if a then
         any = true
-        local raw = fb.memory.bytes(a, RAW_LEN)
+        local raw = uz.memory.bytes(a, RAW_LEN)
         if raw then
           if last_raw[kind] == nil then
             last_raw[kind] = raw -- baseline, no event

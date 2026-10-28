@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local games = require("core.games")
 
 local LUA = (arg and arg[-1]) or "lua5.4"
@@ -21,15 +21,15 @@ t.case("bundle --check passes", function()
 end)
 
 -- Run plugin/main.lua in a sandbox like the Player: no require/load/io/os.
-local function run_bundle(opts)
-  local mock = fb_mock.new(opts)
-  local env = { fb = mock.fb }
+local function run_bundle(opts, legacy_name)
+  local mock = uz_mock.new(opts)
+  local env = { [legacy_name or "uz"] = mock.uz }
   for _, n in ipairs({ "assert", "error", "getmetatable", "ipairs", "next", "pairs", "pcall", "select",
     "setmetatable", "tonumber", "tostring", "type", "xpcall", "rawequal", "rawget", "rawlen", "rawset",
     "string", "table", "math", "utf8", "coroutine" }) do
     env[n] = _G[n]
   end
-  env.print = function(...) mock.fb.log.info(...) end
+  env.print = function(...) mock.uz.log.info(...) end
   env._VERSION = _VERSION
   for _, n in ipairs({ "require", "load", "loadstring", "dofile", "loadfile", "io", "os", "package", "debug" }) do
     t.eq(env[n], nil)
@@ -63,6 +63,11 @@ t.case("sandbox: Omega Ruby", function()
   end
 end)
 
+t.case("sandbox: older app with only the global fb still starts", function()
+  local mock = run_bundle({ game = { system = "3ds", code = "000400000011C400" } }, "fb")
+  t.ok(mock.provided["pokemon.core"], "interface provided through the fb fallback")
+end)
+
 t.case("sandbox: X (no adapter)", function()
   local mock = run_bundle({ game = { system = "3ds", code = "0004000000055D00" } })
   local api = mock.provided["pokemon.core"]
@@ -91,8 +96,8 @@ t.case("sandbox: German NDS game language", function()
 end)
 
 t.case("i18n en/de have the same keys", function()
-  local en = fb_mock.read_json_flat(read("plugin/i18n/en.json"))
-  local de = fb_mock.read_json_flat(read("plugin/i18n/de.json"))
+  local en = uz_mock.read_json_flat(read("plugin/i18n/en.json"))
+  local de = uz_mock.read_json_flat(read("plugin/i18n/de.json"))
   for k in pairs(en) do t.ok(de[k], "missing in de: " .. k) end
   for k in pairs(de) do t.ok(en[k], "missing in en: " .. k) end
   t.ok(next(en))

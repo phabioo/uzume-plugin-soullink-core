@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local crypto = require("pk6_crypto")
 local build = require("pk6_build")
 local oras = require("gen6.oras")
@@ -22,8 +22,8 @@ local function make(set, slots, boxes, extra)
   local opts = { game = { system = "3ds", code = "000400000011C400" }, memory = memory, codec = codec(),
     i18n_dir = "plugin/i18n" }
   for k, v in pairs(extra or {}) do opts[k] = v end
-  local mock = fb_mock.new(opts)
-  local a = oras.attach({ fb = mock.fb, game = {}, detected = {} })
+  local mock = uz_mock.new(opts)
+  local a = oras.attach({ uz = mock.uz, game = {}, detected = {} })
   return a, mock
 end
 
@@ -66,9 +66,9 @@ t.case("nothing valid -> not_ready", function()
   local bad = build.build({ species = 255 })
   local enc = crypto.encrypt(bad)
   enc = enc:sub(1, 30) .. string.char(enc:byte(31) ~ 0xFF) .. enc:sub(32)
-  local mock = fb_mock.new({ memory = { { addr = REV2.party, data = enc .. string.rep("\0", 1000) } },
+  local mock = uz_mock.new({ memory = { { addr = REV2.party, data = enc .. string.rep("\0", 1000) } },
     codec = codec(), i18n_dir = "plugin/i18n" })
-  t.eq({ oras.attach({ fb = mock.fb }):revision() }, { nil, "not_ready" })
+  t.eq({ oras.attach({ uz = mock.uz }):revision() }, { nil, "not_ready" })
   local a2 = make(REV2, { { species = 800 } })
   t.eq({ a2:revision() }, { nil, "not_ready" })
   t.eq(a:language(), nil)
@@ -197,8 +197,8 @@ local function world_make(o, extra)
   local opts = { game = { system = "3ds", code = "000400000011C400" }, memory = mem.world(o), codec = codec(),
     i18n_dir = "plugin/i18n" }
   for k, v in pairs(extra or {}) do opts[k] = v end
-  local mock = fb_mock.new(opts)
-  local a = oras.attach({ fb = mock.fb, game = { id = "pokemon_omega_ruby" }, detected = {} })
+  local mock = uz_mock.new(opts)
+  local a = oras.attach({ uz = mock.uz, game = { id = "pokemon_omega_ruby" }, detected = {} })
   return a, mock
 end
 
@@ -235,7 +235,7 @@ t.case("insane or missing live stats fall back to the level from EXP", function(
   -- an all-zero stats area decrypts to garbage and must not pass
   local mockmem = mem.world({ party = { { species = 255, exp = 1 } } })
   mem.poke(mockmem, V10.party + 0x158, string.rep("\0", 22))
-  local b = oras.attach({ fb = fb_mock.new({ memory = mockmem, codec = codec(), i18n_dir = "plugin/i18n" }).fb })
+  local b = oras.attach({ uz = uz_mock.new({ memory = mockmem, codec = codec(), i18n_dir = "plugin/i18n" }).uz })
   t.eq(b:team()[1].level, nil)
 end)
 
@@ -321,17 +321,17 @@ t.case("address overrides: generic, per revision, bad lines, zone_addr.txt", fun
   -- the party is found at the overridden address; watches follow
   local m = mem.world({ party = { { species = 25 } } })
   m[1].addr = 0x08000000
-  local mock = fb_mock.new({ memory = m, codec = codec(), i18n_dir = "plugin/i18n",
+  local mock = uz_mock.new({ memory = m, codec = codec(), i18n_dir = "plugin/i18n",
     cache = { ["config/addresses.txt"] = "party=0x08000000\nnonsense\n", ["config/zone_addr.txt"] = "0x08123450" } })
-  local a = oras.attach({ fb = mock.fb })
+  local a = oras.attach({ uz = mock.uz })
   t.eq(a:revision(), "v1.0")
   t.eq(mock.watches["oras.v1.0.party"].addr, 0x08000000)
   t.eq(mock.watches["oras.v1.4.party"], nil) -- released after detection
   t.eq(mock.watches["oras.v1.0.map_id"].addr, 0x08123450)
   t.eq(warnings(mock, "nonsense"), 1)
   -- zone_addr.txt wins over map_id= in addresses.txt
-  local both = addr.load_overrides(fb_mock.new({ i18n_dir = "plugin/i18n", cache = {
-    ["config/addresses.txt"] = "map_id=0x08222220", ["config/zone_addr.txt"] = "0x08123450" } }).fb)
+  local both = addr.load_overrides(uz_mock.new({ i18n_dir = "plugin/i18n", cache = {
+    ["config/addresses.txt"] = "map_id=0x08222220", ["config/zone_addr.txt"] = "0x08123450" } }).uz)
   t.eq(both.generic.map_id, 0x08123450)
   t.eq(addr.parse_addr("0x10"), 16)
   t.eq(addr.parse_addr("0"), nil)
@@ -448,11 +448,11 @@ end)
 t.case("event flags are bits of the flag block", function()
   local a, mock = world_make({ party = { { species = 25 } }, extra = nil })
   t.eq(a:event_flag(0), nil)
-  local b = oras.attach({ fb = fb_mock.new({ memory = (function()
+  local b = oras.attach({ uz = uz_mock.new({ memory = (function()
     local m = mem.world({ party = { { species = 25 } } })
     m[#m + 1] = { addr = V10.event_flags, data = "\5" .. string.rep("\0", 0x19F) }
     return m
-  end)(), codec = codec(), i18n_dir = "plugin/i18n" }).fb })
+  end)(), codec = codec(), i18n_dir = "plugin/i18n" }).uz })
   t.eq(b:event_flag(0), true); t.eq(b:event_flag(1), false); t.eq(b:event_flag(2), true)
   t.eq(b:event_flag(0xD00), nil)
 end)
@@ -555,13 +555,13 @@ t.case("v0.3.3: personal table in an LZ11-compressed GARC entry is read", functi
     whole[#whole + 1] = table.concat(e)
   end
   local garc = formats.garc({ formats.lz11_literal(table.concat(whole)) })
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n",
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n",
     romfs = { ["/a/1/9/5"] = garc } })
-  local p = personal.new(mock.fb, { paths = { "/a/1/9/5" } })
+  local p = personal.new(mock.uz, { paths = { "/a/1/9/5" } })
   t.eq(p.growth_rate(25), 25 % 6)
   t.eq(p.diagnostics().personal_ok, 1)
-  local q = personal.new(fb_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n",
-    romfs = { ["/a/1/9/5"] = "GARC" .. string.rep("\0", 40) } }).fb, { paths = { "/a/1/9/5" } })
+  local q = personal.new(uz_mock.new({ game = { system = "3ds" }, codec = formats.fake_codec(), i18n_dir = "plugin/i18n",
+    romfs = { ["/a/1/9/5"] = "GARC" .. string.rep("\0", 40) } }).uz, { paths = { "/a/1/9/5" } })
   t.eq(q.growth_rate(25), nil)
   t.ok(q.diagnostics().personal_first_rejection:find("garc_rejected", 1, true))
 end)

@@ -1,4 +1,4 @@
--- Builds the table for fb.provide("pokemon.core", tbl).
+-- Builds the table for uz.provide("pokemon.core", tbl).
 local M = {}
 
 local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "trainer", "name",

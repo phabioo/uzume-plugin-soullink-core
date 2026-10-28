@@ -1,5 +1,5 @@
 local t = require("t")
-local fb_mock = require("fb_mock")
+local uz_mock = require("uz_mock")
 local formats = require("formats")
 local darc = require("gen6.darc")
 local maps = require("gen6.maps")
@@ -32,13 +32,13 @@ end
 
 local function make(opts)
   opts = opts or {}
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = opts.codec or formats.fake_codec(),
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = opts.codec or formats.fake_codec(),
     i18n_dir = "plugin/i18n", romfs = opts.romfs or world(), cache = opts.cache })
   local reads, lists = {}, 0
-  local ro, lo = mock.fb.rom.romfs, mock.fb.rom.romfs_list
-  mock.fb.rom.romfs = function(p) reads[#reads + 1] = p; return ro(p) end
-  mock.fb.rom.romfs_list = function(d) lists = lists + 1; return lo(d) end
-  local store = maps.new(mock.fb, "pokemon_omega_ruby", function() return "rev2" end)
+  local ro, lo = mock.uz.rom.romfs, mock.uz.rom.romfs_list
+  mock.uz.rom.romfs = function(p) reads[#reads + 1] = p; return ro(p) end
+  mock.uz.rom.romfs_list = function(d) lists = lists + 1; return lo(d) end
+  local store = maps.new(mock.uz, "pokemon_omega_ruby", function() return "rev2" end)
   return store, mock, reads, function() return lists end
 end
 
@@ -190,8 +190,8 @@ end)
 t.case("adapter exposes map methods and feature after ticks", function()
   local codec = formats.fake_codec()
   codec.pk6_decrypt = crypto.decrypt
-  local mock = fb_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = world() })
-  local a = oras.attach({ fb = mock.fb, game = { id = "pokemon_omega_ruby" }, detected = {} })
+  local mock = uz_mock.new({ game = { system = "3ds" }, codec = codec, i18n_dir = "plugin/i18n", romfs = world() })
+  local a = oras.attach({ uz = mock.uz, game = { id = "pokemon_omega_ruby" }, detected = {} })
   t.eq(a:features().map, false)
   t.eq({ a:map_candidates() }, { nil, "not_ready" })
   for _ = 1, 20000 do
