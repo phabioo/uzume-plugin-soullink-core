@@ -94,6 +94,14 @@ function M.world(o)
       .. string.rep("\0", 3) }
   end
   if o.bag then mem[#mem + 1] = { addr = rv.bag, data = M.bag_blob(o.bag) } end
+  -- other pouches: { key_items = list, tms = list, medicine = list, berries = list }
+  for name, list in pairs(o.bag_more or {}) do
+    local p = addr.POUCH[name]
+    local parts = {}
+    for i, sl in ipairs(list) do parts[i] = string.pack("<I2I2", sl[1], sl[2]) end
+    local b = table.concat(parts)
+    mem[#mem + 1] = { addr = rv.bag + p.off, data = b .. string.rep("\0", p.slots * 4 - #b) }
+  end
   if o.zone then mem[#mem + 1] = { addr = rv.map_id, data = string.pack("<I2I2", o.zone, o.facing or 0) } end
   if o.x then mem[#mem + 1] = { addr = rv.player_x, data = string.pack("<f", o.x) } end
   if o.y then mem[#mem + 1] = { addr = rv.player_y, data = string.pack("<f", o.y) } end
