@@ -282,19 +282,109 @@ t.case("encode_money, encode_item, limits and names", function()
   t.eq({ a:encode_money(1000000) }, { nil, "invalid_money" })
   t.eq({ a:encode_money(-1) }, { nil, "invalid_money" })
   t.eq({ a:encode_money(1.5) }, { nil, "invalid_money" })
-  t.eq(a.encode_item, nil) -- no bag offsets known: the interface answers "unsupported"
   local L = a:edit_limits()
   t.eq(L.species, 721); t.eq(L.move, 617); t.eq(L.ev_total, 510); t.eq(L.money, 999999)
   t.eq({ a:names_list("species") }, { nil, "not_ready" })
 end)
 
 t.case("interface exposes the write helpers and their feature flags", function()
-  local a = make({ rev = "v1.0", party = { { species = 25 } } })
+  local a = make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 4, 1 } },
+    bag_more = { medicine = { { 18, 3 } } } })
   local api = interface.new({ id = "pokemon_omega_ruby", name = "OR", gen = 6, system = "3ds", version = "or" }, {}, a)
   local f = api.info().features
-  t.eq(f.edit_pokemon, true); t.eq(f.edit_money, true); t.eq(f.edit_items, false); t.eq(f.name_lists, true)
-  t.eq({ api.encode_item("medicine", 17, 5) }, { nil, "unsupported" })
+  t.eq(f.edit_pokemon, true); t.eq(f.edit_money, true); t.eq(f.edit_items, true); t.eq(f.name_lists, true); t.eq(f.bag, true)
+  t.eq({ api.encode_item("nope", 17, 5) }, { nil, "unknown_pouch" })
+  t.ok(api.encode_item("medicine", 17, 5))
+  t.ok(api.bag())
   t.ok(api.encode_money(10))
   t.ok(api.encode_pokemon({ kind = "team", slot = 1 }, { held_item = 1 }))
   t.eq(api.edit_limits().team_slots, 6)
+end)
+
+-- ---- bag: bag() and encode_item ----
+
+local function sl(...) local o = {} for i, v in ipairs({ ... }) do o[i] = string.pack("<I2I2", v[1], v[2]) end return table.concat(o) end
+
+t.case("bag(): reads every pouch from a synthetic bag, limits list the pouches", function()
+  local a = make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 17, 5 }, { 4, 10 } },
+    bag_more = { key_items = { { 70, 1 } }, tms = { { 328, 1 }, { 330, 1 } }, medicine = { { 18, 3 } }, berries = { { 149, 7 } } } })
+  local b = a:bag()
+  t.eq(b.items, { { slot = 1, item = 17, count = 5 }, { slot = 2, item = 4, count = 10 } })
+  t.eq(b.key_items, { { slot = 1, item = 70, count = 1 } })
+  t.eq(#b.tms, 2); t.eq(b.tms[2].item, 330)
+  t.eq(b.medicine[1].count, 3); t.eq(b.berries[1], { slot = 1, item = 149, count = 7 })
+  local L = a:edit_limits()
+  t.eq(L.item_count, 999); t.eq(L.pouches.items, { slots = 400, max_count = 999 })
+  t.eq(L.pouches.key_items, { slots = 96, max_count = 1 }); t.eq(L.pouches.tms.slots, 108)
+  t.eq(L.pouches.medicine.slots, 64); t.eq(L.pouches.berries.slots, 72)
+  -- only the Items pouch mapped: the others are left out
+  local c = make({ rev = "v1.4", party = { { species = 25 } }, bag = { { 4, 1 } } })
+  local cb = c:bag()
+  t.eq(#cb.items, 1); t.eq(cb.key_items, nil)
+  t.eq({ make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 900, 5 }, { 4, 2000 } } }):bag() }, { nil, "unsupported" })
+  t.eq({ make({ rev = "v1.0", party = { { species = 25 } } }):bag() }, { nil, "not_ready" })
+end)
+
+t.case("encode_item: change, append and remove a slot, v1.0 and v1.4 addresses", function()
+  for _, rev in ipairs({ "v1.0", "v1.4" }) do
+    local base = mem.rev(rev).addr.bag
+    local a = make({ rev = rev, party = { { species = 25 } }, bag = { { 17, 5 }, { 4, 10 }, { 3, 2 } } })
+    local r = a:encode_item("items", 4, 99)
+    t.eq(r.addr, base + 4); t.eq(r.bytes, sl({ 4, 99 })); t.eq(r.ops, { { addr = r.addr, bytes = r.bytes } }); t.eq(r.slot, 2)
+    local n = a:encode_item("items", 20, 7) -- appended behind the three used slots
+    t.eq(n.addr, base + 12); t.eq(n.bytes, sl({ 20, 7 })); t.eq(n.slot, 4)
+    local rm = a:encode_item("items", 17, 0) -- removal compacts: slots 1..3 rewritten
+    t.eq(rm.addr, base); t.eq(rm.bytes, sl({ 4, 10 }, { 3, 2 }, { 0, 0 }))
+    t.eq(a:encode_item("items", 99, 0).warnings, { "unchanged" }) -- absent item, nothing to remove
+    local same = a:encode_item("items", 3, 2)
+    t.eq(same.warnings, { "unchanged" }); t.eq(same.bytes, sl({ 3, 2 })); t.eq(same.addr, base + 8)
+  end
+end)
+
+t.case("encode_item: explicit slot, other pouch offsets", function()
+  local a = make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 17, 5 } },
+    bag_more = { medicine = { { 18, 3 }, { 19, 4 } }, tms = { { 328, 1 } }, key_items = {}, berries = {} } })
+  local r = a:encode_item("items", 4, 10, 2) -- first free slot
+  t.eq(r.addr, V10.bag + 4); t.eq(r.bytes, sl({ 4, 10 }))
+  local rep = a:encode_item("items", 3, 1, 1) -- replace slot 1
+  t.eq(rep.addr, V10.bag); t.eq(rep.bytes, sl({ 3, 1 }))
+  local m = a:encode_item("medicine", 19, 50)
+  t.eq(m.addr, V10.bag + 0x970 + 4); t.eq(m.bytes, sl({ 19, 50 }))
+  local k = a:encode_item("key_items", 70, 1)
+  t.eq(k.addr, V10.bag + 0x640); t.eq(k.pouch, "key_items")
+  t.eq(a:encode_item("tms", 329, 1).addr, V10.bag + 0x7C0 + 4)
+  t.eq(a:encode_item("berries", 149, 999).addr, V10.bag + 0xA70)
+  local rm = a:encode_item("medicine", 18, 0, 1)
+  t.eq(rm.addr, V10.bag + 0x970); t.eq(rm.bytes, sl({ 19, 4 }, { 0, 0 }))
+end)
+
+t.case("encode_item: bounds answer nil plus a reason, nothing is guessed", function()
+  local a = make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 17, 5 } } })
+  t.eq({ a:encode_item("pockets", 17, 1) }, { nil, "unknown_pouch" })
+  t.eq({ a:encode_item(nil, 17, 1) }, { nil, "unknown_pouch" })
+  t.eq({ a:encode_item("items", 0, 1) }, { nil, "invalid_item" })
+  t.eq({ a:encode_item("items", 776, 1) }, { nil, "invalid_item" })
+  t.eq({ a:encode_item("items", 1.5, 1) }, { nil, "invalid_item" })
+  t.eq({ a:encode_item("items", 17, 1000) }, { nil, "invalid_count" })
+  t.eq({ a:encode_item("items", 17, -1) }, { nil, "invalid_count" })
+  t.eq({ a:encode_item("items", 17, "5") }, { nil, "invalid_count" })
+  t.eq({ a:encode_item("key_items", 70, 2) }, { nil, "invalid_count" })
+  t.eq({ a:encode_item("tms", 328, 2) }, { nil, "invalid_count" })
+  t.eq({ a:encode_item("items", 17, 1, 0) }, { nil, "invalid_slot" })
+  t.eq({ a:encode_item("items", 17, 1, 401) }, { nil, "invalid_slot" })
+  t.eq({ a:encode_item("key_items", 70, 1, 97) }, { nil, "invalid_slot" })
+  t.eq({ a:encode_item("items", 17, 1, 3) }, { nil, "invalid_slot" }) -- would leave a gap
+  t.eq({ a:encode_item("items", 17, 0, 2) }, { nil, "invalid_slot" }) -- nothing to remove there
+  -- full pouch
+  local full = {}
+  for i = 1, 400 do full[i] = { (i % 700) + 1, 1 } end
+  local f = make({ rev = "v1.0", party = { { species = 25 } }, bag = full })
+  t.eq({ f:encode_item("items", 775, 1) }, { nil, "pouch_full" })
+  t.ok(f:encode_item("items", 5, 9)) -- existing item still changes
+  -- garbage, unreadable
+  t.eq({ make({ rev = "v1.0", party = { { species = 25 } }, bag = { { 900, 5 }, { 4, 2000 } } }):encode_item("items", 4, 1) },
+    { nil, "unsupported" })
+  t.eq({ make({ rev = "v1.0", party = { { species = 25 } } }):encode_item("items", 4, 1) }, { nil, "not_ready" })
+  local e = make({ rev = "v1.0", party = { { species = 25 } }, bag = {} }):encode_item("items", 4, 1) -- empty pouch: append
+  t.eq(e.addr, V10.bag); t.eq(e.bytes, sl({ 4, 1 }))
 end)

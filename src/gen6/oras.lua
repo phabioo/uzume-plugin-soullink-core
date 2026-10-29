@@ -490,6 +490,46 @@ function M.attach(ctx)
     return { count = balls }
   end
 
+  -- Reads one pouch as a packed list { {id, count}, ... } (ends at the first empty slot, invalid slots are
+  -- kept raw). Returns list, nil | nil, "not_ready" | nil, "unsupported" (garbage).
+  local function read_pouch(bagaddr, p)
+    local raw = uz.memory.bytes(bagaddr + p.off, p.slots * 4)
+    if not raw or #raw < p.slots * 4 then return nil, "not_ready" end
+    local list, valid, invalid = {}, 0, 0
+    for i = 0, p.slots - 1 do
+      local id, ct = string.unpack("<I2I2", raw, i * 4 + 1)
+      if id == 0 then break end
+      list[#list + 1] = { id, ct }
+      if id > M.MAX_ITEM_ID or ct == 0 or ct > p.max_count then invalid = invalid + 1 else valid = valid + 1 end
+    end
+    if invalid > 0 and invalid >= valid then return nil, "unsupported" end
+    return list
+  end
+
+  -- All pouches: { items = { {slot, item, count, name}, ... }, key_items, tms, medicine, berries }. The Items
+  -- pouch must be readable and plausible; another pouch that is not is left out. Implausible slots are skipped.
+  function obj:bag()
+    if not detect() then return nil, "not_ready" end
+    local bagaddr = A("bag")
+    if not bagaddr then return nil, "unsupported" end
+    local out = {}
+    for _, p in ipairs(addr.POUCHES) do
+      local list, err = read_pouch(bagaddr, p)
+      if not list then
+        if p.name == "items" then return nil, err end
+      else
+        local rows = {}
+        for i, s in ipairs(list) do
+          if s[1] <= M.MAX_ITEM_ID and s[2] >= 1 and s[2] <= p.max_count then
+            rows[#rows + 1] = { slot = i, item = s[1], count = s[2], name = peek_name("item", s[1]) }
+          end
+        end
+        out[p.name] = rows
+      end
+    end
+    return out
+  end
+
   -- Event flag n (0..0xCFF) of the save, or nil. Not part of the interface yet.
   function obj:event_flag(n)
     if not detect() then return nil end
@@ -527,6 +567,9 @@ function M.attach(ctx)
     for k, v in pairs(L) do out[k] = v end
     out.money = M.MAX_MONEY
     out.team_slots, out.boxes, out.box_slots = M.PARTY_SLOTS, M.BOX_COUNT, M.BOX_SLOTS
+    out.item_count = M.MAX_ITEM_COUNT
+    out.pouches = {}
+    for _, p in ipairs(addr.POUCHES) do out.pouches[p.name] = { slots = p.slots, max_count = p.max_count } end
     return out
   end
 
@@ -606,6 +649,70 @@ function M.attach(ctx)
     if not misc then return nil, "unsupported" end
     local bytes = string.pack("<I4", value)
     return { addr = misc + MISC_MONEY, bytes = bytes, ops = { { addr = misc + MISC_MONEY, bytes = bytes } }, warnings = {} }
+  end
+
+  -- Bag slot: encode_item(pouch, item, count [, slot]). pouch: "items" | "key_items" | "tms" | "medicine" |
+  -- "berries"; item 1..775; count 0..max of the pouch (999, key items and TMs 1); count 0 removes the item.
+  -- Pouches are treated as packed lists (an empty slot ends the list). Without `slot` the item's slot is
+  -- changed or the item is appended; with `slot` (1-based, at most one past the last used slot) that slot is
+  -- set to item/count. Returns { addr, bytes, ops, warnings, pouch, slot } (ops cover the changed slots only;
+  -- an unchanged bag gives one op rewriting the slot and the warning "unchanged"). Errors: nil, "not_ready" |
+  -- "unsupported" | "unknown_pouch" | "invalid_item" | "invalid_count" | "invalid_slot" | "pouch_full".
+  function obj:encode_item(pouch, item, count, slot)
+    if not detect() then return nil, "not_ready" end
+    local p = type(pouch) == "string" and addr.POUCH[pouch] or nil
+    if not p then return nil, "unknown_pouch" end
+    if not (math.type(item) == "integer" and item >= 1 and item <= M.MAX_ITEM_ID) then return nil, "invalid_item" end
+    if not (math.type(count) == "integer" and count >= 0 and count <= p.max_count) then return nil, "invalid_count" end
+    if slot ~= nil and not (math.type(slot) == "integer" and slot >= 1 and slot <= p.slots) then
+      return nil, "invalid_slot"
+    end
+    local bagaddr = A("bag")
+    if not bagaddr then return nil, "unsupported" end
+    local list, err = read_pouch(bagaddr, p)
+    if not list then return nil, err end
+    local old = {}
+    for i, s in ipairs(list) do old[i] = s end
+    local at = slot
+    if slot then
+      if slot > #list + 1 then return nil, "invalid_slot" end
+      if count == 0 then
+        if slot > #list then return nil, "invalid_slot" end
+        table.remove(list, slot)
+      else
+        list[slot] = { item, count }
+      end
+    else
+      for i, s in ipairs(list) do
+        if s[1] == item then at = i; break end
+      end
+      if count == 0 then
+        if at then table.remove(list, at) end
+      elseif at then
+        list[at] = { item, count }
+      else
+        if #list >= p.slots then return nil, "pouch_full" end
+        list[#list + 1] = { item, count }
+        at = #list
+      end
+    end
+    local first, last
+    for i = 1, p.slots do
+      local a, b = old[i], list[i]
+      if (a and a[1] or 0) ~= (b and b[1] or 0) or (a and a[2] or 0) ~= (b and b[2] or 0) then
+        first = first or i
+        last = i
+      end
+    end
+    local warnings = {}
+    if not first then first, last = at or 1, at or 1; warnings[1] = "unchanged" end
+    local parts = {}
+    for i = first, last do
+      local s = list[i]
+      parts[#parts + 1] = string.pack("<I2I2", s and s[1] or 0, s and s[2] or 0)
+    end
+    local op = { addr = bagaddr + p.off + (first - 1) * 4, bytes = table.concat(parts) }
+    return { addr = op.addr, bytes = op.bytes, ops = { op }, warnings = warnings, pouch = pouch, slot = at }
   end
 
   function obj:box_count()

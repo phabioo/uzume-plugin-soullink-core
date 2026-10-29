@@ -28,7 +28,7 @@ M.INDEX_REV = "3"                   -- cache format revision; other revisions ar
 -- must equal the manifest version (tests/test_maps.lua checks it). Both are part of the cache key of the
 -- index and of every PNG, so a plugin update never reuses an older scan result: it rescans.
 M.MAP_SCAN_REV = "m2"
-M.PLUGIN_VERSION = "0.6.4"
+M.PLUGIN_VERSION = "0.7.0"
 M.CACHE_REV = M.INDEX_REV .. "-" .. M.MAP_SCAN_REV .. "-" .. M.PLUGIN_VERSION
 M.MAX_ENTRIES_PER_FILE = 5000
 M.MAX_LZ_INPUT = 8 * 1024 * 1024

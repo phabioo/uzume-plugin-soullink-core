@@ -12,10 +12,10 @@ t.case("no adapter: unsupported everywhere", function()
   t.eq(info.gen, 6)
   t.eq(info.language, "de")
   t.eq(info.revision, nil)
-  t.eq(info.features, { team = false, box = false, location = false, battle = false, encounters = false, badges = false, balls = false,
+  t.eq(info.features, { team = false, box = false, location = false, battle = false, encounters = false, badges = false, balls = false, bag = false,
     icons = false, map = false, names = false, areas = false, locations = false, trainer = false, live_stats = false,
     diagnostics = false, edit_pokemon = false, edit_money = false, edit_items = false, name_lists = false })
-  for _, m in ipairs({ "team", "box_count", "location", "battle", "encounters", "badges", "balls", "icon", "map_candidates", "map_image",
+  for _, m in ipairs({ "team", "box_count", "location", "battle", "encounters", "badges", "balls", "bag", "icon", "map_candidates", "map_image",
     "map_selected", "trainer", "name", "species_info", "areas", "locations", "zone_info", "diagnostics",
     "encode_pokemon", "encode_money", "encode_item", "edit_limits", "names_list" }) do
     local v, err = api[m]()

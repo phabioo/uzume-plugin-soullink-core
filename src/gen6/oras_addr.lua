@@ -17,6 +17,19 @@ M.BOX_COUNT, M.BOX_SLOTS, M.BOX_SIZE = 31, 30, 232
 M.MON_STRIDE, M.MON_SLOTS = 0x244, 8
 M.FLAG_BATTLE = 0x00040001
 M.BAG_SLOTS = 400 -- Items pouch (Poke Balls live here)
+-- Bag pouches, offsets relative to the bag start (= the Items pouch), each slot u16 item id + u16 count.
+-- PKHeX SAV6AO / MyItem layout (recalled, not re-fetched; not checked on a real game). The order is the
+-- order of bag().
+M.POUCHES = {
+  { name = "items", off = 0x000, slots = 400, max_count = 999 },
+  { name = "key_items", off = 0x640, slots = 96, max_count = 1 },
+  { name = "tms", off = 0x7C0, slots = 108, max_count = 1 },
+  { name = "medicine", off = 0x970, slots = 64, max_count = 999 },
+  { name = "berries", off = 0xA70, slots = 72, max_count = 999 },
+}
+M.POUCH = {}
+for _, p in ipairs(M.POUCHES) do M.POUCH[p.name] = p end
+M.BAG_BYTES = 0xA70 + 72 * 4 -- whole bag, 0xB90
 
 -- key -> watched length in bytes
 M.LENGTHS = {
@@ -24,7 +37,7 @@ M.LENGTHS = {
   box = M.BOX_COUNT * M.BOX_SLOTS * M.BOX_SIZE,
   mystatus = 0x70,   -- TID +0, SID +2, version +4, language +0x2D, OT name +0x48 (0x1A bytes)
   misc = 0x10,       -- money u32 +8, badges u8 bitfield +0xC
-  bag = 0x640,       -- Items pouch: 400 slots x (u16 item id, u16 count)
+  bag = M.BAG_BYTES, -- all 5 pouches, first the Items pouch: 400 slots x (u16 item id, u16 count)
   play_time = 4,     -- u16 hours, u8 minutes, u8 seconds
   map_id = 4,        -- u16 zone id, u16 facing
   player_x = 4,      -- f32
