@@ -111,6 +111,12 @@ Fallback when no live stats pass the check. Level = highest n with `exp_for_leve
 
 `balls()` (since 0.6.4, contract v0.5) reads the 400 slots at `bag` and returns `{ count = n }` with n = sum of the counts of all slots whose item id is a ball. Ball ids (internal ids, no names; PKHeX Legal ball items, recalled and not re-fetched): 1..16 (Master, Ultra, Great, Poke, Safari, Net, Dive, Nest, Repeat, Timer, Luxury, Premier, Dusk, Heal, Quick, Cherish), 492..500 (Fast, Level, Lure, Heavy, Love, Friend, Moon, Sport, Park) and 576 (Dream). The list ends at the first slot with id 0. Slots with id above 775 or count 0 or above 999 are skipped; when skipped slots are at least as many as plausible ones the answer is `nil, "unsupported"` instead of a wrong number (wrong address, stale memory). `nil, "not_ready"` while no revision is found or the pouch is unreadable; `nil, "unsupported"` when the revision has no `bag` address. Caveat: a new game with a not yet filled pouch reads as 0 balls, which is also the truth. Nothing here was checked on a real game: Fabio should compare `balls()` with the in-game bag on v1.0 (and v1.4) and correct `bag` through `config/addresses.txt` if needed.
 
+## Move PP and abilities (0.7.1)
+
+Sources (recalled from pk3DS / PKHeX, not re-fetched; NOT yet checked on a real game). Move data: RomFS GARC, candidates `/a/1/8/9` (pk3DS GARCReference "move") and `/a/1/9/4`, tried in order, the first that validates is used. Accepted shapes: the last GARC file is a "WD" mini container (magic `WD`, u16 count, count + 1 u32 offsets) or the concatenated table (length a multiple of 0x24), or one file per move. Record (PKHeX Move6): 0x24 bytes, index = move id, base PP at `+0x05`. Validation: at least 622 records of 0x24 bytes, every PP at most 64, at least 90% of moves 1..621 nonzero. `encode_pokemon` writes base PP for each new move (PP Ups 0); a move that stays in its slot keeps its PP and PP Ups, a move in a different slot starts with 0 PP Ups.
+
+Abilities: personal entry (PersonalInfoORAS) `+0x18` ability 1, `+0x19` ability 2, `+0x1A` hidden ability (u8, 0 = none). PK6 `0x15` is the ability number (bit 0 ability 1, bit 1 ability 2, bit 2 hidden). Names come from the `ability` kind of the game text.
+
 ## Bag (0.7.0)
 
 `bag()` and `encode_item(pouch, item, count[, slot])` (contract v0.6) work on the five pouches behind the `bag` address. Each slot is 4 bytes, u16 item id + u16 count, little endian, packed from slot 0 (an id of 0 ends the list):

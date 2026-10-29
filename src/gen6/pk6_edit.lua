@@ -108,7 +108,7 @@ local function patch(s, off, bytes) return s:sub(1, off) .. bytes .. s:sub(off +
 
 -- Applies `fields` to the decrypted structure `plain` (checksum is NOT recomputed here).
 -- ctx (all optional): growth_rate(species) -> 0..5, base_stats(species, form) -> {hp,atk,def,spe,spa,spd},
--- species_name(id) -> string, current_level (the level the structure shows now).
+-- species_name(id) -> string, move_pp(move) -> base PP or nil, abilities(species, form) -> {id1, id2, hidden} or nil, current_level (the level the structure shows now).
 -- Returns new_plain, warnings (list of strings) or nil, error.
 function M.apply(plain, fields, ctx)
   ctx = ctx or {}
@@ -131,7 +131,36 @@ function M.apply(plain, fields, ctx)
     out = patch(out, OFF.flags, string.char((flags & 0x07) | (form << 3)))
   end
   if species_changed then
-    warn("ability_unchanged")
+    local ab = fields.ability == nil and ctx.abilities and ctx.abilities(species, form) or nil
+    if fields.ability ~= nil and ctx.abilities then
+      -- the caller sets the ability itself, nothing to derive
+    elseif ab then
+      -- keep the slot of the old ability: 1, 2 or 3 (hidden). Known from the ability number, else matched by id.
+      local slot
+      local num = rec.ability_num or 0
+      if num & 4 ~= 0 then slot = 3 elseif num & 2 ~= 0 then slot = 2 elseif num & 1 ~= 0 then slot = 1 end
+      if not slot then
+        local old = ctx.abilities(rec.species, rec.form)
+        if old and rec.ability ~= 0 then
+          for s = 1, 3 do
+            if old[s] == rec.ability and not (s == 2 and old[2] == old[1]) then slot = slot or s end
+          end
+        end
+      end
+      local new = slot and ab[slot] or 0
+      if slot and new == 0 then -- the new species lacks that slot: first ability
+        slot, new = 1, ab[1]
+        warn("ability_slot_fallback")
+      end
+      if slot and new ~= 0 then
+        out = patch(out, OFF.ability, string.char(new))
+        out = patch(out, OFF.ability_num, string.char(1 << (slot - 1)))
+      else
+        warn("ability_unchanged")
+      end
+    else
+      warn("ability_unchanged")
+    end
     if not rec.nicknamed and fields.nickname == nil and ctx.species_name then
       local n = ctx.species_name(species)
       if type(n) == "string" and n ~= "" and utf8.len(n) then
@@ -156,7 +185,17 @@ function M.apply(plain, fields, ctx)
   end
 
   if fields.nature ~= nil then out = patch(out, OFF.nature, string.char(fields.nature)) end
-  if fields.ability ~= nil then out = patch(out, OFF.ability, string.char(fields.ability)) end
+  if fields.ability ~= nil then
+    out = patch(out, OFF.ability, string.char(fields.ability))
+    -- the slot follows the id when the new species' abilities are known (hidden stays hidden)
+    local ab = ctx.abilities and ctx.abilities(species, form)
+    if ab then
+      local slot
+      for s = 3, 1, -1 do if ab[s] == fields.ability then slot = s end end
+      if slot == 3 and ab[1] == fields.ability then slot = 1 end
+      if slot then out = patch(out, OFF.ability_num, string.char(1 << (slot - 1))) end
+    end
+  end
   if fields.held_item ~= nil then out = patch(out, OFF.held_item, string.pack("<I2", fields.held_item)) end
 
   if fields.nickname ~= nil then
@@ -200,9 +239,17 @@ function M.apply(plain, fields, ctx)
         pps[i], ups[i] = string.char(old_pp[i]), string.char(old_up[i])
       else
         local pp = fields.pp and fields.pp[i]
-        if pp == nil then pp = M.DEFAULT_PP; unknown_pp = true end
-        pps[i] = string.char(pp)
-        ups[i] = (id == old_ids[i]) and string.char(old_up[i]) or "\0"
+        local up = (id == old_ids[i]) and old_up[i] or 0
+        if pp == nil then
+          local base = ctx.move_pp and ctx.move_pp(id)
+          if base then
+            pp = base + up * (base // 5) -- each PP Up adds 20% of the base PP
+          else
+            pp = M.DEFAULT_PP; unknown_pp = true
+          end
+        end
+        pps[i] = string.char(math.min(pp, 255))
+        ups[i] = string.char(up)
       end
     end
     out = patch(out, OFF.moves, table.concat(ids))

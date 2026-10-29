@@ -138,12 +138,12 @@ __mod["core.interface"] = function(...)
 -- Builds the table for uz.provide("pokemon.core", tbl).
 local M = {}
 
-local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "balls", "bag", "trainer", "name",
+local METHODS = { "team", "box", "box_count", "location", "battle", "encounters", "badges", "balls", "bag", "abilities", "trainer", "name",
   "species_info", "areas", "locations", "zone_info", "icon", "icon_variants", "map_candidates", "map_image", "map_selected", "diagnostics",
   "encode_pokemon", "encode_money", "encode_item", "edit_limits", "names_list" }
 local FEATURE = {
   team = "team", box = "box", location = "location",
-  battle = "battle", encounters = "encounters", badges = "badges", balls = "balls", bag = "bag", trainer = "trainer", name = "names",
+  battle = "battle", encounters = "encounters", badges = "badges", balls = "balls", bag = "bag", abilities = "abilities", trainer = "trainer", name = "names",
   areas = "areas", locations = "locations", icon = "icons", map_candidates = "map", diagnostics = "diagnostics",
   encode_pokemon = "edit_pokemon", encode_money = "edit_money", encode_item = "edit_items", names_list = "name_lists",
 }
@@ -1281,7 +1281,7 @@ M.INDEX_REV = "3"                   -- cache format revision; other revisions ar
 -- must equal the manifest version (tests/test_maps.lua checks it). Both are part of the cache key of the
 -- index and of every PNG, so a plugin update never reuses an older scan result: it rescans.
 M.MAP_SCAN_REV = "m2"
-M.PLUGIN_VERSION = "0.7.0"
+M.PLUGIN_VERSION = "0.7.1"
 M.CACHE_REV = M.INDEX_REV .. "-" .. M.MAP_SCAN_REV .. "-" .. M.PLUGIN_VERSION
 M.MAX_ENTRIES_PER_FILE = 5000
 M.MAX_LZ_INPUT = 8 * 1024 * 1024
@@ -1720,6 +1720,134 @@ end
 return M
 
 end
+__mod["gen6.moves"] = function(...)
+-- Base PP per move, read at runtime from the user's own game files (RomFS move GARC). Nothing from the
+-- game is shipped or persisted; the values live in a Lua table cache only.
+--
+-- ORAS move data (community-documented, all to verify locally, NOT yet checked on a real game):
+--   path  : candidates "/a/1/8/9" (pk3DS GARCReference "move", recalled) and "/a/1/9/4", tried in order;
+--           the first one whose data validates as a move table is used (see validate)
+--   entry : 0x24 bytes per move (PKHeX Move6), index = move id; byte 0 type, 3 power, 4 accuracy,
+--           0x05 base PP (recalled), 0x06 priority
+--   shape : a "WD" mini container (u16 count, count + 1 u32 offsets) inside the single GARC file, or the
+--           concatenated table (length % 0x24 == 0), or one GARC file per move
+local garc_entry = require("gen6.garc_entry")
+local M = {}
+
+M.CANDIDATE_PATHS = { "/a/1/8/9", "/a/1/9/4" }
+M.ENTRY_SIZE = 0x24
+M.PP_OFFSET = 0x05
+M.MIN_ENTRIES = 622 -- moves 0..621 (ORAS)
+M.MAX_BASE_PP = 64
+M.MAX_ATTEMPTS = 3
+
+function M.new(uz, opts)
+  opts = opts or {}
+  local paths = opts.paths or M.CANDIDATE_PATHS
+  local esize = opts.entry_size or M.ENTRY_SIZE
+  local poff = opts.pp_offset or M.PP_OFFSET
+  local self = {}
+  local pps, attempts = nil, 0
+  local first_reject
+  local function reject(why) if not first_reject then first_reject = why end end
+
+  -- entries: list (1-based, entry i = move i - 1) of strings -> table move id -> base PP, or nil
+  local function from_entries(list)
+    if #list < M.MIN_ENTRIES then return nil end
+    local out, filled = {}, 0
+    for id = 1, M.MIN_ENTRIES - 1 do
+      local e = list[id + 1]
+      if type(e) ~= "string" or #e ~= esize then reject("entry_size"); return nil end
+      local pp = e:byte(poff + 1)
+      if pp > M.MAX_BASE_PP then reject("pp_invalid"); return nil end
+      if pp > 0 then filled = filled + 1 end
+      out[id] = pp
+    end
+    if filled < (M.MIN_ENTRIES - 1) * 9 // 10 then reject("pp_mostly_zero"); return nil end
+    return out
+  end
+
+  local function split(blob)
+    local list = {}
+    if blob:sub(1, 2) == "WD" and #blob >= 8 then -- mini container
+      local count = string.unpack("<I2", blob, 3)
+      if 4 + 4 * (count + 1) > #blob then return nil end
+      local offs = {}
+      for i = 0, count do offs[i] = string.unpack("<I4", blob, 5 + 4 * i) end
+      for i = 0, count - 1 do
+        if offs[i] > offs[i + 1] or offs[i + 1] > #blob then return nil end
+        list[i + 1] = blob:sub(offs[i] + 1, offs[i + 1])
+      end
+      return list
+    end
+    if #blob % esize == 0 then
+      for i = 0, #blob // esize - 1 do list[i + 1] = blob:sub(i * esize + 1, i * esize + esize) end
+      return list
+    end
+    return nil
+  end
+
+  local function validate(data)
+    local g, gerr = uz.codec.garc(data)
+    if type(g) ~= "table" or type(g.count) ~= "number" then
+      reject("garc_rejected: " .. (tostring(gerr):gsub("[^%w _%.:%-]", "?"):sub(1, 40)))
+      return nil
+    end
+    local last = garc_entry.entry(uz.codec, data, g.count)
+    if type(last) == "string" then
+      local list = split(last)
+      local r = list and from_entries(list)
+      if r then return r end
+    end
+    if g.count >= M.MIN_ENTRIES then
+      local list = {}
+      for i = 1, M.MIN_ENTRIES do list[i] = garc_entry.entry(uz.codec, data, i) end
+      return from_entries(list)
+    end
+    reject("table_shape")
+    return nil
+  end
+
+  local function load()
+    if pps then return true end
+    if attempts >= M.MAX_ATTEMPTS then return false end
+    attempts = attempts + 1
+    if not (uz and uz.rom and uz.rom.romfs and uz.codec and uz.codec.garc and uz.codec.garc_file) then return false end
+    for _, path in ipairs(paths) do
+      local data = uz.rom.romfs(path)
+      if type(data) ~= "string" then reject("romfs_unreadable") else
+        local r = validate(data)
+        if r then
+          pps = r
+          self.path = path
+          if uz.log and uz.log.info then uz.log.info("move data accepted at " .. path) end
+          return true
+        end
+      end
+    end
+    return false
+  end
+
+  -- Base PP (1..64) of a move id (1..621), or nil when unknown or the table is not readable.
+  function self.base_pp(move)
+    if math.type(move) ~= "integer" or move < 1 or move >= M.MIN_ENTRIES then return nil end
+    if not load() then return nil end
+    local pp = pps[move]
+    return (pp and pp > 0) and pp or nil
+  end
+
+  function self.diagnostics()
+    return { moves_ok = pps and 1 or 0, moves_attempts = attempts, moves_first_rejection = first_reject or "none" }
+  end
+
+  function self.reset() pps, attempts, self.path = nil, 0, nil end
+
+  return self
+end
+
+return M
+
+end
 __mod["gen6.oras"] = function(...)
 -- Adapter for Pokemon Omega Ruby / Alpha Sapphire (3DS, Gen 6).
 -- Addresses and formats with sources: docs/games/omega-ruby-alpha-sapphire.md.
@@ -1728,6 +1856,7 @@ __mod["gen6.oras"] = function(...)
 local pk6 = require("gen6.pk6")
 local growth = require("gen6.growth")
 local personal = require("gen6.personal")
+local moves = require("gen6.moves")
 local icons = require("gen6.icons")
 local maps = require("gen6.maps")
 local addr = require("gen6.oras_addr")
@@ -1791,6 +1920,7 @@ end
 function M.attach(ctx)
   local uz = ctx.uz
   local pers = personal.new(uz)
+  local move_store = moves.new(uz)
   local icon_store = icons.new(uz, pers)
   local ticks = 0
   local map_store, names, zone_store, battle_mod
@@ -2130,6 +2260,7 @@ function M.attach(ctx)
     local d = zone_store.diagnostics()
     for k, v in pairs(names.diagnostics()) do d[k] = v end
     for k, v in pairs(pers.diagnostics()) do d[k] = v end
+    for k, v in pairs(move_store.diagnostics()) do d[k] = v end
     for k, v in pairs(icon_store.diagnostics()) do d[k] = v end
     for k, v in pairs(map_store.diagnostics()) do d[k] = v end
     d.locations_source = d.locations > 0 and "zones" or (names.count("location") > 0 and "text" or "none")
@@ -2143,6 +2274,22 @@ function M.attach(ctx)
   function obj:species_info(species, form)
     if not pers.growth_rate(1) then return nil, "not_ready" end
     return pers.info(species, form or 0)
+  end
+
+  -- Abilities of a species form: { {slot = 1, id, name}, {slot = 2, ...}, {slot = 3, hidden = true, ...} }.
+  -- Slot 2 is left out when the species has one ability (none or the same id); the hidden slot when absent.
+  function obj:abilities(species, form)
+    if not pers.growth_rate(1) then return nil, "not_ready" end
+    local ab, err = pers.abilities(species, form or 0)
+    if not ab then return nil, err end
+    local out = {}
+    for s = 1, 3 do
+      local id = ab[s]
+      if id ~= 0 and not (s == 2 and id == ab[1]) then
+        out[#out + 1] = { slot = s, id = id, name = peek_name("ability", id), hidden = s == 3 or nil }
+      end
+    end
+    return out
   end
 
   function obj:location() return location_info(false) end
@@ -2353,6 +2500,10 @@ function M.attach(ctx)
       end,
       species_name = function(id) return peek_name("species", id) end,
       current_level = level,
+      move_pp = move_store.base_pp,
+      abilities = function(sp, form)
+        return (pers.abilities(sp, form))
+      end,
     })
     if not new then return nil, warnings end
     local enc = pk6.seal(new)
@@ -3154,6 +3305,7 @@ M.TYPE_OFFSET = 0x06 -- Type1, Type2 follows
 M.ENTRY_SIZE = 0x50
 M.GROWTH_OFFSET = 0x15
 M.BASE_STATS_OFFSET = 0x00 -- 6 bytes HP, Atk, Def, Spe, SpA, SpD (PKHeX PersonalInfo, recalled, not verified on a device)
+M.ABILITY_OFFSET = 0x18 -- Ability 1, Ability 2, Hidden Ability (u8 each; PKHeX PersonalInfoORAS, recalled, not verified on a device)
 M.FORM_INDEX_OFFSET = 0x1C -- u16 FormStatsIndex (PKHeX PersonalInfoXY/ORAS), 0 = no extra forms
 M.FORM_COUNT_OFFSET = 0x20 -- u8 FormeCount
 M.MIN_ENTRIES = 722 -- species 0..721
@@ -3292,6 +3444,18 @@ function M.new(uz, opts)
     return base
   end
 
+  -- { id1, id2, hidden } ability ids of a species form (0 = none), or nil, "not_ready" | "unknown_species" | "no_form".
+  function self.abilities(species, form)
+    if math.type(species) ~= "integer" or species < 1 or species >= M.MIN_ENTRIES then
+      return nil, "unknown_species"
+    end
+    local idx, err = self.form_index(species, form)
+    if not idx then return nil, err end
+    local e = raw_entry(idx)
+    if not e then return nil, "no_form" end
+    return { e:byte(M.ABILITY_OFFSET + 1), e:byte(M.ABILITY_OFFSET + 2), e:byte(M.ABILITY_OFFSET + 3) }
+  end
+
   -- Plain strings and numbers only.
   function self.diagnostics()
     return { personal_ok = rates and 1 or 0, personal_attempts = attempts, personal_first_rejection = first_reject or "none" }
@@ -3321,7 +3485,7 @@ M.MAX_SPECIES = 721 -- ORAS National Dex
 
 local OFF = {
   ec = 0x00, checksum = 0x06, species = 0x08, held_item = 0x0A, tid = 0x0C, sid = 0x0E,
-  exp = 0x10, ability = 0x14, pid = 0x18, nature = 0x1C, flags = 0x1D, evs = 0x1E,
+  exp = 0x10, ability = 0x14, ability_num = 0x15, pid = 0x18, nature = 0x1C, flags = 0x1D, evs = 0x1E,
   nickname = 0x40, moves = 0x5A, iv32 = 0x74, ot_name = 0xB0, version = 0xDF, language = 0xE3,
   -- party extension (not trusted for live party memory, see parse)
   status = 0xE8, level = 0xEC, hp = 0xF0, max_hp = 0xF2, stats = 0xF4,
@@ -3400,6 +3564,7 @@ function M.parse(plain)
     fateful = flags & 1 == 1,
     nature = u8(OFF.nature),
     ability = u8(OFF.ability),
+    ability_num = u8(OFF.ability_num), -- bit 0 = ability 1, bit 1 = ability 2, bit 2 = hidden (PKHeX AbilityNumber)
     held_item = u16(OFF.held_item),
     moves = moves,
     ot_name = M.utf16le_to_utf8(plain:sub(OFF.ot_name + 1, OFF.ot_name + 0x1A), 12),
@@ -3641,7 +3806,7 @@ local function patch(s, off, bytes) return s:sub(1, off) .. bytes .. s:sub(off +
 
 -- Applies `fields` to the decrypted structure `plain` (checksum is NOT recomputed here).
 -- ctx (all optional): growth_rate(species) -> 0..5, base_stats(species, form) -> {hp,atk,def,spe,spa,spd},
--- species_name(id) -> string, current_level (the level the structure shows now).
+-- species_name(id) -> string, move_pp(move) -> base PP or nil, abilities(species, form) -> {id1, id2, hidden} or nil, current_level (the level the structure shows now).
 -- Returns new_plain, warnings (list of strings) or nil, error.
 function M.apply(plain, fields, ctx)
   ctx = ctx or {}
@@ -3664,7 +3829,36 @@ function M.apply(plain, fields, ctx)
     out = patch(out, OFF.flags, string.char((flags & 0x07) | (form << 3)))
   end
   if species_changed then
-    warn("ability_unchanged")
+    local ab = fields.ability == nil and ctx.abilities and ctx.abilities(species, form) or nil
+    if fields.ability ~= nil and ctx.abilities then
+      -- the caller sets the ability itself, nothing to derive
+    elseif ab then
+      -- keep the slot of the old ability: 1, 2 or 3 (hidden). Known from the ability number, else matched by id.
+      local slot
+      local num = rec.ability_num or 0
+      if num & 4 ~= 0 then slot = 3 elseif num & 2 ~= 0 then slot = 2 elseif num & 1 ~= 0 then slot = 1 end
+      if not slot then
+        local old = ctx.abilities(rec.species, rec.form)
+        if old and rec.ability ~= 0 then
+          for s = 1, 3 do
+            if old[s] == rec.ability and not (s == 2 and old[2] == old[1]) then slot = slot or s end
+          end
+        end
+      end
+      local new = slot and ab[slot] or 0
+      if slot and new == 0 then -- the new species lacks that slot: first ability
+        slot, new = 1, ab[1]
+        warn("ability_slot_fallback")
+      end
+      if slot and new ~= 0 then
+        out = patch(out, OFF.ability, string.char(new))
+        out = patch(out, OFF.ability_num, string.char(1 << (slot - 1)))
+      else
+        warn("ability_unchanged")
+      end
+    else
+      warn("ability_unchanged")
+    end
     if not rec.nicknamed and fields.nickname == nil and ctx.species_name then
       local n = ctx.species_name(species)
       if type(n) == "string" and n ~= "" and utf8.len(n) then
@@ -3689,7 +3883,17 @@ function M.apply(plain, fields, ctx)
   end
 
   if fields.nature ~= nil then out = patch(out, OFF.nature, string.char(fields.nature)) end
-  if fields.ability ~= nil then out = patch(out, OFF.ability, string.char(fields.ability)) end
+  if fields.ability ~= nil then
+    out = patch(out, OFF.ability, string.char(fields.ability))
+    -- the slot follows the id when the new species' abilities are known (hidden stays hidden)
+    local ab = ctx.abilities and ctx.abilities(species, form)
+    if ab then
+      local slot
+      for s = 3, 1, -1 do if ab[s] == fields.ability then slot = s end end
+      if slot == 3 and ab[1] == fields.ability then slot = 1 end
+      if slot then out = patch(out, OFF.ability_num, string.char(1 << (slot - 1))) end
+    end
+  end
   if fields.held_item ~= nil then out = patch(out, OFF.held_item, string.pack("<I2", fields.held_item)) end
 
   if fields.nickname ~= nil then
@@ -3733,9 +3937,17 @@ function M.apply(plain, fields, ctx)
         pps[i], ups[i] = string.char(old_pp[i]), string.char(old_up[i])
       else
         local pp = fields.pp and fields.pp[i]
-        if pp == nil then pp = M.DEFAULT_PP; unknown_pp = true end
-        pps[i] = string.char(pp)
-        ups[i] = (id == old_ids[i]) and string.char(old_up[i]) or "\0"
+        local up = (id == old_ids[i]) and old_up[i] or 0
+        if pp == nil then
+          local base = ctx.move_pp and ctx.move_pp(id)
+          if base then
+            pp = base + up * (base // 5) -- each PP Up adds 20% of the base PP
+          else
+            pp = M.DEFAULT_PP; unknown_pp = true
+          end
+        end
+        pps[i] = string.char(math.min(pp, 255))
+        ups[i] = string.char(up)
       end
     end
     out = patch(out, OFF.moves, table.concat(ids))
