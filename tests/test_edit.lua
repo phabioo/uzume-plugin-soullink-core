@@ -176,12 +176,31 @@ local function personal_garc()
     for i = 1, 0x50 do e[i] = "\0" end
     e[1], e[2], e[3], e[4], e[5], e[6] = "\45", "\49", "\49", "\45", "\65", "\65"
     e[0x15 + 1] = string.char(s % 6)
+    -- abilities (synthetic): ability 1 = s % 50 + 1, ability 2 = +50 for even s (else the same), hidden for s % 3 == 0
+    local a1 = s % 50 + 1
+    e[0x18 + 1], e[0x19 + 1], e[0x1A + 1] = string.char(a1), string.char(s % 2 == 0 and a1 + 50 or a1),
+      string.char(s % 3 == 0 and 100 + s % 50 or 0)
     list[s + 1] = table.concat(e)
   end
   local files = {}
   for i = 1, #list do files[i] = list[i] end
   files[#files + 1] = table.concat(list)
   return formats.garc(files)
+end
+
+-- Move table: one GARC file holding a "WD" container of 622 records of 0x24 bytes, base PP at +5 = id % 40 + 1.
+local function moves_garc(shape)
+  local recs = {}
+  for id = 0, 621 do
+    local r = {}
+    for i = 1, 0x24 do r[i] = "\0" end
+    if id > 0 then r[6] = string.char(id % 40 + 1) end
+    recs[#recs + 1] = table.concat(r)
+  end
+  if shape == "plain" then return formats.garc({ table.concat(recs) }) end
+  local offs, pos = {}, 4 + 4 * 623
+  for i = 0, 622 do offs[#offs + 1] = string.pack("<I4", pos); pos = pos + (recs[i + 1] and #recs[i + 1] or 0) end
+  return formats.garc({ "WD" .. string.pack("<I2", 622) .. table.concat(offs) .. table.concat(recs) })
 end
 
 local function make(world, extra)
@@ -387,4 +406,83 @@ t.case("encode_item: bounds answer nil plus a reason, nothing is guessed", funct
   t.eq({ make({ rev = "v1.0", party = { { species = 25 } } }):encode_item("items", 4, 1) }, { nil, "not_ready" })
   local e = make({ rev = "v1.0", party = { { species = 25 } }, bag = {} }):encode_item("items", 4, 1) -- empty pouch: append
   t.eq(e.addr, V10.bag); t.eq(e.bytes, sl({ 4, 1 }))
+end)
+
+-- ---- move PP and abilities from the game data ----
+
+local function make_data(world, shape)
+  return make(world, { romfs = { ["/a/1/9/5"] = personal_garc(), ["/a/1/8/9"] = moves_garc(shape) } })
+end
+
+t.case("encode_pokemon sets base PP for new moves from the move table (WD container and plain table)", function()
+  for _, shape in ipairs({ "wd", "plain" }) do
+    local a = make_data({ rev = "v1.0", party = { { species = 25, exp = 500, moves = { 33, 45 }, party = LIVE } } }, shape)
+    local res = a:encode_pokemon({ kind = "team", slot = 1 }, { moves = { 33, 55, 100 } })
+    t.eq(res.warnings, {}, shape)
+    local pp = res.record
+    local plain = select(1, require("gen6.pk6").decrypt(res.ops[1].bytes .. string.rep("\0", 232 - 0xE8)))
+    t.eq({ plain:byte(0x62 + 1, 0x62 + 4) }, { 0, 55 % 40 + 1, 100 % 40 + 1, 0 }, shape) -- slot 1 keeps its old PP (0 here)
+  end
+end)
+
+t.case("new moves get base PP, PP Ups are not carried to a different move", function()
+  local plain = build.build({ species = 25, moves = { 33, 45 }, exp = 8 })
+  plain = plain:sub(1, 0x62) .. string.char(10, 10, 0, 0) .. string.char(2, 0, 0, 0) .. plain:sub(0x6B)
+  local ctx = { move_pp = function(id) return id % 40 + 1 end, current_level = 5 }
+  local out, w = edit.apply(plain, { moves = { 33, 50 } }, ctx)
+  t.eq(w, {}); t.eq({ out:byte(0x62 + 1, 0x62 + 2) }, { 10, 11 }) -- slot 1 untouched, new move base PP 11
+  local out2 = edit.apply(plain, { moves = { 50, 33 } }, ctx)
+  t.eq({ out2:byte(0x62 + 1, 0x62 + 2) }, { 11, 33 % 40 + 1 }) -- no PP Ups carried to a different move
+  t.eq({ out2:byte(0x66 + 1, 0x66 + 2) }, { 0, 0 })
+  -- same id with the caller's PP and PP Ups keeps the Ups
+  local out3 = edit.apply(plain, { moves = { 33 }, pp = { 12 } }, ctx)
+  t.eq(out3:byte(0x62 + 1), 12); t.eq(out3:byte(0x66 + 1), 2)
+end)
+
+t.case("without move data the placeholder PP and pp_unknown stay", function()
+  local a = make({ rev = "v1.0", party = { { species = 25, party = LIVE } } })
+  local res = a:encode_pokemon({ kind = "team", slot = 1 }, { moves = { 55 } })
+  t.eq(res.warnings, { "pp_unknown" })
+  local bad = make({ rev = "v1.0", party = { { species = 25, party = LIVE } } },
+    { romfs = { ["/a/1/9/5"] = personal_garc(), ["/a/1/8/9"] = formats.garc({ "junk" }) } })
+  t.eq(bad:encode_pokemon({ kind = "team", slot = 1 }, { moves = { 55 } }).warnings, { "pp_unknown" })
+end)
+
+t.case("abilities(species, form): slots, hidden flag, single ability, errors", function()
+  local a = make({ rev = "v1.0", party = { { species = 25 } } })
+  t.eq(a:abilities(6), { { slot = 1, id = 7 }, { slot = 2, id = 57 }, { slot = 3, id = 106, hidden = true } })
+  t.eq(a:abilities(7), { { slot = 1, id = 8 } }) -- odd, no hidden: one ability
+  t.eq(a:abilities(3), { { slot = 1, id = 4 }, { slot = 3, id = 103, hidden = true } })
+  t.eq({ a:abilities(0) }, { nil, "unknown_species" })
+  t.eq({ a:abilities(722) }, { nil, "unknown_species" })
+  t.eq({ a:abilities(6, 5) }, { nil, "no_form" })
+  local none = make({ rev = "v1.0", party = { { species = 25 } } }, { romfs = {} })
+  t.eq({ none:abilities(6) }, { nil, "not_ready" })
+end)
+
+t.case("species change keeps the ability slot, hidden stays hidden", function()
+  -- species 4: ability 1 = 5, ability 2 = 55; species 6: 7 / 57 / hidden 106; species 3: 4 / hidden 103
+  local a, mock = make({ rev = "v1.0", party = { { species = 4, ability = 55, ability_num = 2, party = LIVE },
+    { species = 3, ability = 103, ability_num = 4, party = LIVE }, { species = 6, ability = 106, ability_num = 4, party = LIVE },
+    { species = 4, ability = 55, ability_num = 0, party = LIVE }, { species = 4, ability = 5, ability_num = 1, party = LIVE } } })
+  local r = a:encode_pokemon({ kind = "team", slot = 1 }, { species = 6 })
+  t.eq(r.warnings, {}); t.eq(r.record.ability, 57); t.eq(r.record.ability_num, 2)
+  r = a:encode_pokemon({ kind = "team", slot = 2 }, { species = 6 })
+  t.eq(r.warnings, {}); t.eq(r.record.ability, 106); t.eq(r.record.ability_num, 4)
+  r = a:encode_pokemon({ kind = "team", slot = 3 }, { species = 7 }) -- no hidden ability there: first ability
+  t.eq(r.warnings, { "ability_slot_fallback" }); t.eq(r.record.ability, 8); t.eq(r.record.ability_num, 1)
+  r = a:encode_pokemon({ kind = "team", slot = 4 }, { species = 6 }) -- no ability number: matched by id
+  t.eq(r.warnings, {}); t.eq(r.record.ability, 57)
+  r = a:encode_pokemon({ kind = "team", slot = 5 }, { species = 6 })
+  t.eq(r.record.ability, 7); t.eq(r.record.ability_num, 1)
+  -- an explicit ability wins and sets the slot when the species has it
+  r = a:encode_pokemon({ kind = "team", slot = 1 }, { species = 6, ability = 106 })
+  t.eq(r.warnings, {}); t.eq(r.record.ability, 106); t.eq(r.record.ability_num, 4)
+  -- unknown ability and no number: kept, with the warning
+  local b = make({ rev = "v1.0", party = { { species = 4, ability = 77, ability_num = 0, party = LIVE } } })
+  r = b:encode_pokemon({ kind = "team", slot = 1 }, { species = 6 })
+  t.eq(r.warnings, { "ability_unchanged" }); t.eq(r.record.ability, 77)
+  -- no personal data: unchanged as before
+  local n = make({ rev = "v1.0", party = { { species = 4, ability = 55, ability_num = 2, party = LIVE } } }, { romfs = {} })
+  t.eq(n:encode_pokemon({ kind = "team", slot = 1 }, { species = 6, level = 5 }), nil)
 end)

@@ -10,7 +10,7 @@ M.MAX_SPECIES = 721 -- ORAS National Dex
 
 local OFF = {
   ec = 0x00, checksum = 0x06, species = 0x08, held_item = 0x0A, tid = 0x0C, sid = 0x0E,
-  exp = 0x10, ability = 0x14, pid = 0x18, nature = 0x1C, flags = 0x1D, evs = 0x1E,
+  exp = 0x10, ability = 0x14, ability_num = 0x15, pid = 0x18, nature = 0x1C, flags = 0x1D, evs = 0x1E,
   nickname = 0x40, moves = 0x5A, iv32 = 0x74, ot_name = 0xB0, version = 0xDF, language = 0xE3,
   -- party extension (not trusted for live party memory, see parse)
   status = 0xE8, level = 0xEC, hp = 0xF0, max_hp = 0xF2, stats = 0xF4,
@@ -89,6 +89,7 @@ function M.parse(plain)
     fateful = flags & 1 == 1,
     nature = u8(OFF.nature),
     ability = u8(OFF.ability),
+    ability_num = u8(OFF.ability_num), -- bit 0 = ability 1, bit 1 = ability 2, bit 2 = hidden (PKHeX AbilityNumber)
     held_item = u16(OFF.held_item),
     moves = moves,
     ot_name = M.utf16le_to_utf8(plain:sub(OFF.ot_name + 1, OFF.ot_name + 0x1A), 12),

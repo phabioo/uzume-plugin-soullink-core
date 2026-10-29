@@ -5,6 +5,7 @@
 local pk6 = require("gen6.pk6")
 local growth = require("gen6.growth")
 local personal = require("gen6.personal")
+local moves = require("gen6.moves")
 local icons = require("gen6.icons")
 local maps = require("gen6.maps")
 local addr = require("gen6.oras_addr")
@@ -68,6 +69,7 @@ end
 function M.attach(ctx)
   local uz = ctx.uz
   local pers = personal.new(uz)
+  local move_store = moves.new(uz)
   local icon_store = icons.new(uz, pers)
   local ticks = 0
   local map_store, names, zone_store, battle_mod
@@ -407,6 +409,7 @@ function M.attach(ctx)
     local d = zone_store.diagnostics()
     for k, v in pairs(names.diagnostics()) do d[k] = v end
     for k, v in pairs(pers.diagnostics()) do d[k] = v end
+    for k, v in pairs(move_store.diagnostics()) do d[k] = v end
     for k, v in pairs(icon_store.diagnostics()) do d[k] = v end
     for k, v in pairs(map_store.diagnostics()) do d[k] = v end
     d.locations_source = d.locations > 0 and "zones" or (names.count("location") > 0 and "text" or "none")
@@ -420,6 +423,22 @@ function M.attach(ctx)
   function obj:species_info(species, form)
     if not pers.growth_rate(1) then return nil, "not_ready" end
     return pers.info(species, form or 0)
+  end
+
+  -- Abilities of a species form: { {slot = 1, id, name}, {slot = 2, ...}, {slot = 3, hidden = true, ...} }.
+  -- Slot 2 is left out when the species has one ability (none or the same id); the hidden slot when absent.
+  function obj:abilities(species, form)
+    if not pers.growth_rate(1) then return nil, "not_ready" end
+    local ab, err = pers.abilities(species, form or 0)
+    if not ab then return nil, err end
+    local out = {}
+    for s = 1, 3 do
+      local id = ab[s]
+      if id ~= 0 and not (s == 2 and id == ab[1]) then
+        out[#out + 1] = { slot = s, id = id, name = peek_name("ability", id), hidden = s == 3 or nil }
+      end
+    end
+    return out
   end
 
   function obj:location() return location_info(false) end
@@ -630,6 +649,10 @@ function M.attach(ctx)
       end,
       species_name = function(id) return peek_name("species", id) end,
       current_level = level,
+      move_pp = move_store.base_pp,
+      abilities = function(sp, form)
+        return (pers.abilities(sp, form))
+      end,
     })
     if not new then return nil, warnings end
     local enc = pk6.seal(new)

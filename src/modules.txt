@@ -5,6 +5,7 @@ core.serialize
 gen6.growth
 gen6.oras
 gen6.personal
+gen6.moves
 gen6.pk6
 gen6.pk6_edit
 main

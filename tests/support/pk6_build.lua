@@ -36,6 +36,7 @@ function M.build(f)
   put(0x0E, "<I2", f.sid or 2000)
   put(0x10, "<I4", f.exp or 0)
   b[0x14] = f.ability or 0
+  b[0x15] = f.ability_num or 0
   put(0x18, "<I4", pid)
   b[0x1C] = f.nature or 0
   b[0x1D] = (f.fateful and 1 or 0) | ((f.gender or 0) << 1) | ((f.form or 0) << 3)
