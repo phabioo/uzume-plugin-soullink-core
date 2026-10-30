@@ -261,7 +261,12 @@ function M.new(uz, opts)
     elseif state == "done" and fallback_used then
       -- loaded without knowing the language: reload once the real one is known
       local lang = opts.language_fn and opts.language_fn() or nil
-      if lang ~= nil then fallback_used = false; begin(lang) end
+      if lang ~= nil then
+        fallback_used = false
+        local want = (M.LANG_INDEX[lang] or {})[1]
+        -- the fallback archive is already the right one (EN): keep it
+        if want == nil or want ~= cands.current then begin(lang) end
+      end
     end
   end
 
@@ -282,7 +287,7 @@ function M.new(uz, opts)
 
   -- Plain numbers and strings only: state, language index, lines per kind, species file index.
   function self.diagnostics()
-    local d = { text_state = state, text_language_index = cands and cands.current or -1, text_retries = rounds,
+    local d = { text_state = state, text_language_index = cands and cands.current or -1, text_retries = rounds, text_fallback_used = fallback_used and 1 or 0,
       text_first_rejection = first_reject or "none" }
     for _, k in ipairs(M.KIND_ORDER) do d["lines_" .. k] = files[k] and files[k].count or 0 end
     d.species_file_index = files.species and (found_species_file or M.FILES.species) or -1

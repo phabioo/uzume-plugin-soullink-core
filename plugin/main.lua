@@ -1281,7 +1281,7 @@ M.INDEX_REV = "3"                   -- cache format revision; other revisions ar
 -- must equal the manifest version (tests/test_maps.lua checks it). Both are part of the cache key of the
 -- index and of every PNG, so a plugin update never reuses an older scan result: it rescans.
 M.MAP_SCAN_REV = "m2"
-M.PLUGIN_VERSION = "0.7.1"
+M.PLUGIN_VERSION = "0.7.2"
 M.CACHE_REV = M.INDEX_REV .. "-" .. M.MAP_SCAN_REV .. "-" .. M.PLUGIN_VERSION
 M.MAX_ENTRIES_PER_FILE = 5000
 M.MAX_LZ_INPUT = 8 * 1024 * 1024
@@ -1889,7 +1889,10 @@ M.ORIGIN_AS, M.ORIGIN_OR = 26, 27 -- PKHeX GameVersion (X 24, Y 25)
 M.MAX_MONEY = 999999
 M.MAX_STAT = 1500 -- upper bound for a stat or HP value (Blissey at level 100: 714)
 
--- MyStatus block offsets (PKHeX MyStatus6)
+-- MyStatus block offsets (PKHeX MyStatus6). Checked against
+-- https://raw.githubusercontent.com/kwsch/PKHeX/master/PKHeX.Core/Saves/Substructures/Gen6/MyStatus6.cs :
+-- TID16 +0, SID16 +2, Game +4, Region +0x26, Country +0x27, ConsoleRegion +0x2C, Language +0x2D
+-- (LanguageID: 1 ja, 2 en, 3 fr, 4 it, 5 de, 7 es, 8 ko, 9 zh-Hans, 10 zh-Hant), OT name +0x48 (0x1A bytes).
 local MS_TID, MS_VERSION, MS_LANGUAGE, MS_OT = 0, 4, 0x2D, 0x48
 -- Misc block offsets (PKHeX Misc6AO)
 local MISC_MONEY, MISC_BADGES = 8, 0xC
@@ -2085,12 +2088,13 @@ function M.attach(ctx)
 
   local obj = {}
 
-  -- Language of the game: MyStatus language byte; heuristic fallback (party members of own origin).
-  function obj:language()
+  -- Language of the game and where it came from: "mystatus" (language byte), "party" (largest own-origin
+  -- OT group) or nil, "fallback" (not known yet; callers must not guess from region or title).
+  local function resolve_language()
     local ms = mystatus()
-    if ms and ms.language then return ms.language end
+    if ms and ms.language then return ms.language, "mystatus" end
     local team = read_team()
-    if not team then return nil end
+    if not team then return nil, "fallback" end
     local groups, order = {}, {}
     for _, r in ipairs(team) do
       if (r.origin_game == M.ORIGIN_AS or r.origin_game == M.ORIGIN_OR) and r.language then
@@ -2103,7 +2107,12 @@ function M.attach(ctx)
     for _, key in ipairs(order) do
       if not best or groups[key].n > best.n then best = groups[key] end
     end
-    return best and best.first.language or nil
+    if best and best.first.language then return best.first.language, "party" end
+    return nil, "fallback"
+  end
+
+  function obj:language()
+    return (resolve_language())
   end
 
   names = text.new(uz, { language_fn = function() return obj:language() end })
@@ -2265,8 +2274,13 @@ function M.attach(ctx)
     for k, v in pairs(map_store.diagnostics()) do d[k] = v end
     d.locations_source = d.locations > 0 and "zones" or (names.count("location") > 0 and "text" or "none")
     d.revision = chosen and chosen.name or "none"
-    local ok, lang = pcall(obj.language, obj)
+    local ok, lang, src = pcall(resolve_language)
     d.language = ok and lang or "unknown"
+    d.language_source = ok and src or "fallback"
+    -- raw MyStatus bytes help to diagnose an unreadable language (-1: block not readable)
+    local base = A("mystatus")
+    local raw = base and uz.memory.bytes(base, 0x70)
+    d.mystatus_language_id = raw and #raw >= 0x70 and raw:byte(MS_LANGUAGE + 1) or -1
     return d
   end
   function obj:zone_info(zone) return zone_store.zone_info(zone) end
@@ -4269,7 +4283,12 @@ function M.new(uz, opts)
     elseif state == "done" and fallback_used then
       -- loaded without knowing the language: reload once the real one is known
       local lang = opts.language_fn and opts.language_fn() or nil
-      if lang ~= nil then fallback_used = false; begin(lang) end
+      if lang ~= nil then
+        fallback_used = false
+        local want = (M.LANG_INDEX[lang] or {})[1]
+        -- the fallback archive is already the right one (EN): keep it
+        if want == nil or want ~= cands.current then begin(lang) end
+      end
     end
   end
 
@@ -4290,7 +4309,7 @@ function M.new(uz, opts)
 
   -- Plain numbers and strings only: state, language index, lines per kind, species file index.
   function self.diagnostics()
-    local d = { text_state = state, text_language_index = cands and cands.current or -1, text_retries = rounds,
+    local d = { text_state = state, text_language_index = cands and cands.current or -1, text_retries = rounds, text_fallback_used = fallback_used and 1 or 0,
       text_first_rejection = first_reject or "none" }
     for _, k in ipairs(M.KIND_ORDER) do d["lines_" .. k] = files[k] and files[k].count or 0 end
     d.species_file_index = files.species and (found_species_file or M.FILES.species) or -1
