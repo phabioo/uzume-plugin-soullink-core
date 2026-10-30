@@ -617,3 +617,56 @@ t.case("v0.3.3: personal table in an LZ11-compressed GARC entry is read", functi
   t.eq(q.growth_rate(25), nil)
   t.ok(q.diagnostics().personal_first_rejection:find("garc_rejected", 1, true))
 end)
+
+-- v0.7.2: game language robustness (issue #42) --------------------------------------------------------
+
+local function lang_world()
+  local function lines(prefix, n) local l = {} for i = 0, n - 1 do l[#l + 1] = prefix .. i end return l end
+  local function gt(tag)
+    return tb.garc({ [98] = tb.build(lines(tag .. "S", 30)), [14] = tb.build(lines(tag .. "M", 10)),
+      [90] = tb.build(lines(tag .. "L", 40)) })
+  end
+  return { ["/a/0/7/6"] = gt("de"), ["/a/0/7/3"] = gt("en") }
+end
+
+t.case("v0.7.2: MyStatus language byte 5 -> de, text index 5, language_source mystatus", function()
+  local a = world_make({ party = { { species = 25 } }, trainer = TRAINER },
+    { romfs = lang_world(), codec = text_codec() })
+  ticks(a, 400)
+  local d = a:diagnostics()
+  t.eq(d.language, "de"); t.eq(d.language_source, "mystatus"); t.eq(d.mystatus_language_id, 5)
+  t.eq(d.text_language_index, 5); t.eq(a:name("species", 3), "deS3")
+end)
+
+t.case("v0.7.2: language known only after the fallback -> text reloads to the right index", function()
+  local tr = { tid = 1, sid = 2, version = 27, language_id = 0, name = "Rubin" } -- 0: not set yet
+  local a, mock = world_make({ party = { { species = 25, origin_game = 24 } }, trainer = tr },
+    { romfs = lang_world(), codec = text_codec() })
+  ticks(a, 3000)
+  local d = a:diagnostics()
+  t.eq(d.language, "unknown"); t.eq(d.language_source, "fallback"); t.eq(d.mystatus_language_id, 0)
+  t.eq(d.text_language_index, 2); t.eq(d.text_fallback_used, 1)
+  t.eq(a:name("species", 3), "enS3")
+  mem.poke(mock.regions, V10.mystatus + 0x2D, string.char(5))
+  ticks(a, 400)
+  d = a:diagnostics()
+  t.eq(d.language, "de"); t.eq(d.language_source, "mystatus")
+  t.eq(d.text_language_index, 5); t.eq(d.text_fallback_used, 0)
+  t.eq(a:name("species", 3), "deS3")
+end)
+
+t.case("v0.7.2: language from the party when MyStatus has none (language_source party)", function()
+  local tr = { tid = 11, sid = 22, version = 27, language_id = 0, name = "Rubin" }
+  local a = world_make({ party = { { species = 25, tid = 11, sid = 22, origin_game = 27, language_id = 5 } }, trainer = tr })
+  local d = a:diagnostics()
+  t.eq(d.language, "de"); t.eq(d.language_source, "party")
+end)
+
+t.case("v0.7.2: language never known -> EN fallback, language_source fallback", function()
+  local a = world_make({ party = { { species = 25, origin_game = 24 } } },
+    { romfs = lang_world(), codec = text_codec() })
+  ticks(a, 3000)
+  local d = a:diagnostics()
+  t.eq(d.language, "unknown"); t.eq(d.language_source, "fallback"); t.eq(d.mystatus_language_id, -1)
+  t.eq(d.text_language_index, 2); t.eq(a:name("species", 3), "enS3")
+end)
